@@ -751,12 +751,46 @@ namespace zed_wrapper {
             param.sdk_gpu_id = gpu_id;
             param.depth_stabilization = depth_stabilization;
 
+            // SVRT changes for better point clouds
+            // depth between .3 and 5 meters
+            param.depth_minimum_distance = .3;
+
             sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
             while (err != sl::SUCCESS) {
                 err = zed->open(param);
                 NODELET_INFO_STREAM(errorCode2str(err));
                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
             }
+
+            // SVRT changes for better point clouds
+
+            // depth between .3 and 5 meters
+            zed->setDepthMaxRangeValue(5.0);
+
+            // first set camera parameters to default
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_BRIGHTNESS, -1, true);
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_CONTRAST, -1, true);
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_HUE, -1, true);
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_SATURATION, -1, true);
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_GAIN, -1, true);
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, -1, true);
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_WHITEBALANCE, -1, true);
+
+            // now adjust contrast, saturation, gain to get better images
+            // 0 to 8
+            //zed->setCameraSettings(sl::CAMERA_SETTINGS_BRIGHTNESS, -1);
+            // 0 to 8
+            zed->setCameraSettings(sl::CAMERA_SETTINGS_CONTRAST, 8);
+            // 0 to 11
+            //zed->setCameraSettings(sl::CAMERA_SETTINGS_HUE, -1);
+            // 0 to 8
+            //zed->setCameraSettings(sl::CAMERA_SETTINGS_SATURATION, 8);
+            // 0 to 100, or auto if EXPOSURE is -1
+            //zed->setCameraSettings(sl::CAMERA_SETTINGS_GAIN, -1, true);
+            // 0 to 100, -1 AutoExposure/AutoGain
+            //zed->setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, -1, true);
+            // 2800 to 6500 by 100, -1 is Auto White Balance
+            //zed->setCameraSettings(sl::CAMERA_SETTINGS_WHITEBALANCE, -1, true);
 
             //Reconfigure confidence
             server = boost::make_shared<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>>();
