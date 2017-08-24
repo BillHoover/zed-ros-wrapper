@@ -22,7 +22,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     <!-- GPU ID-->
     <arg name="gpu_id"                default="-1" />
     <!-- Definition coordinate frames -->
-    <arg name="publish_tf"            default="true" />
+    <arg name="publish_tf"            default="false" />
     <arg name="odometry_frame"        default="odom" />
     <arg name="base_frame"            default="zed_center" />
     <arg name="camera_frame"          default="zed_left_camera" />

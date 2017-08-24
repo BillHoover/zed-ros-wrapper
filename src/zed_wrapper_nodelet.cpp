@@ -762,7 +762,11 @@ namespace zed_wrapper {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
             }
 
+            NODELET_INFO_STREAM("SVRT parameters set");
             // SVRT changes for better point clouds
+
+            // disable tracking
+            zed->disableTracking();
 
             // depth between .3 and 5 meters
             zed->setDepthMaxRangeValue(5.0);
