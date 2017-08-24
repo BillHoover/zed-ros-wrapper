@@ -449,17 +449,24 @@ namespace zed_wrapper {
                     runParams.enable_point_cloud = true;
                 // Run the loop only if there is some subscribers
                 if (runLoop) {
+                    /*    SVRT disable tracking
                     if ( (depth_stabilization || odom_SubNumber > 0) && !tracking_activated) { //Start the tracking
                         if (odometry_DB != "" && !file_exist(odometry_DB)) {
                             odometry_DB = "";
                             NODELET_WARN("odometry_DB path doesn't exist or is unreachable.");
                         }
+                        NODELET_INFO_STREAM("SVRT enable tracking");
+  NODELET_INFO_STREAM(" depth stab: " << depth_stabilization);
+  NODELET_INFO_STREAM(" odom_Sub: " << odom_SubNumber);
                         zed->enableTracking(trackParams);
                         tracking_activated = true;
                     } else if (!depth_stabilization && odom_SubNumber == 0 && tracking_activated) { //Stop the tracking
+                        NODELET_INFO_STREAM("SVRT disable tracking");
                         zed->disableTracking();
                         tracking_activated = false;
                     }
+                    */
+
                     computeDepth = (depth_SubNumber + cloud_SubNumber + odom_SubNumber) > 0; // Detect if one of the subscriber need to have the depth information
                     ros::Time t = ros::Time::now(); // Get current time
 
@@ -490,14 +497,17 @@ namespace zed_wrapper {
                                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
                             }
                             tracking_activated = false;
+                            /*  SVRT - disable tracking
                             if (depth_stabilization || odom_SubNumber > 0) { //Start the tracking
                                 if (odometry_DB != "" && !file_exist(odometry_DB)) {
                                     odometry_DB = "";
                                     NODELET_WARN("odometry_DB path doesn't exist or is unreachable.");
                                 }
+                                NODELET_INFO_STREAM("SVRT enable tracking 2");
                                 zed->enableTracking(trackParams);
                                 tracking_activated = true;
                             }
+                            */
                         }
                         continue;
                     }
