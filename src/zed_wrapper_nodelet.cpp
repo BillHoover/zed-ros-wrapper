@@ -52,12 +52,10 @@
 
 #include <boost/make_shared.hpp>
 
-#include <sensor_msgs/PointCloud2.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-
 #include <sl/Camera.hpp>
+
+#include <rodan_vr_api/SparseXYZRGB.h>
+#include <rodan_vr_api/SparsePointCloud.h>
 
 using namespace std;
 
@@ -110,6 +108,8 @@ namespace zed_wrapper {
         string cloud_frame_id = "";
         string right_frame_id = "";
         string left_frame_id = "";
+
+        int32_t TotalPoints = 0;
 
         /* \brief Convert an sl:Mat to a cv::Mat
          * \param mat : the sl::Mat to convert
@@ -223,29 +223,39 @@ namespace zed_wrapper {
          * \param height : the height of the point cloud
          * \param pub_cloud : the publisher object to use
          */
+        static int16_t zedToInt16(float v)
+        {
+            // take the ZED value (float meters) and return int16 mm
+            // if -inf, +inf, or NaN, return -32768
+            if (isnanf(v) || isinff(v)) {
+                return -32768;
+            }
+            v *= 1000.0f;
+            v += 0.5f;
+            if (v > 32767.0f) v=32767.0f;
+            return static_cast<int16_t>(v);
+        }
         void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
-            pcl::PointCloud<pcl::PointXYZRGB> point_cloud;
-            point_cloud.width = width;
-            point_cloud.height = height;
-            int size = width*height;
-            point_cloud.points.resize(size);
-
-            sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
-            for (int i = 0; i < size; i++) {
-                point_cloud.points[i].x = cpu_cloud[i][2];
-                point_cloud.points[i].y = -cpu_cloud[i][0];
-                point_cloud.points[i].z = -cpu_cloud[i][1];
-                point_cloud.points[i].rgb = cpu_cloud[i][3];
+            // total points is constant
+            // check each point and only update ones that are enough different
+            if (TotalPoints == 0) {
+                TotalPoints = width * height;
+std::array<int, 100> a;
+a.fill(-1);
+                // since this is the first frame, we must allocate out buffer
             }
 
-            sensor_msgs::PointCloud2 output;
-            pcl::toROSMsg(point_cloud, output); // Convert the point cloud to a ROS message
-            output.header.frame_id = point_cloud_frame_id; // Set the header values of the ROS message
-            output.header.stamp = point_cloud_time;
-            output.height = height;
-            output.width = width;
-            output.is_bigendian = false;
-            output.is_dense = false;
+            // get the data from ZED
+            sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
+            for (int i = 0; i < TotalPoints; i++) {
+                int16_t x = zedToInt16(cpu_cloud[i][2]);
+                int16_t y = zedToInt16(cpu_cloud[i][0]);
+                int16_t z = zedToInt16(cpu_cloud[i][1]);
+                int32_t rgb = cpu_cloud[i][3];
+            }
+
+            rodan_vr_api::SparsePointCloud output;
+            output.totalpoints = TotalPoints;
             pub_cloud.publish(output);
         }
 
@@ -636,8 +646,8 @@ namespace zed_wrapper {
             pub_depth = it_zed.advertise(depth_topic, 1); //depth
             NODELET_INFO_STREAM("Advertized on topic " << depth_topic);
 
-            //PointCloud publisher
-            pub_cloud = nh.advertise<sensor_msgs::PointCloud2> (point_cloud_topic, 1);
+            //SparsePointCloud publisher
+            pub_cloud = nh.advertise<rodan_vr_api::SparsePointCloud> (point_cloud_topic, 1);
             NODELET_INFO_STREAM("Advertized on topic " << point_cloud_topic);
 
             // Camera info publishers

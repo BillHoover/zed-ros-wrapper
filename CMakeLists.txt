@@ -54,6 +54,7 @@ find_package(catkin COMPONENTS
   pcl_conversions
   nodelet
   tf2_geometry_msgs
+  rodan_vr_api
 )
 
 checkPackage("image_transport" "")
@@ -65,6 +66,7 @@ checkPackage("tf2_ros" "")
 checkPackage("pcl_conversions" "")
 checkPackage("nodelet" "")
 checkPackage("tf2_geometry_msgs" "")
+checkPackage("rodan_vr_api" "")
 
 generate_dynamic_reconfigure_options(
   cfg/Zed.cfg
@@ -81,6 +83,7 @@ catkin_package(
     tf2_ros
     tf2_geometry_msgs
     pcl_conversions
+    rodan_vr_api
 )
 ###############################################################################
 # INCLUDES
