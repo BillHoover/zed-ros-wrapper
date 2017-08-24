@@ -19,7 +19,7 @@ function(checkPackage package customMessage)
     endif()
 endfunction(checkPackage)
 
-find_package(ZED 2.0)
+find_package(ZED 2.1)
 checkPackage("ZED" "ZED SDK not found, install it from:\n https://www.stereolabs.com/developers/")
 
 ##For Jetson, OpenCV4Tegra is based on OpenCV2.4
@@ -34,9 +34,9 @@ else() # Ubuntu Desktop
 endif()
 
 find_package(OpenCV ${OCV_VERSION} COMPONENTS core highgui imgproc)
-checkPackage("OpenCV_core" "OpenCV core not found, install it from the tutorial at:\n https://www.stereolabs.com/documentation/overview/getting-started/getting-started.html")
-checkPackage("OpenCV_highgui" "OpenCV highgui not found, install it from the tutorial at:\n https://www.stereolabs.com/documentation/overview/getting-started/getting-started.html")
-checkPackage("OpenCV_imgproc" "OpenCV imgproc not found, install it from the tutorial at:\n https://www.stereolabs.com/documentation/overview/getting-started/getting-started.html")
+#checkPackage("OpenCV_core" "OpenCV core not found, install it from the tutorial at:\n https://www.stereolabs.com/documentation/overview/getting-started/getting-started.html")
+#checkPackage("OpenCV_highgui" "OpenCV highgui not found, install it from the tutorial at:\n https://www.stereolabs.com/documentation/overview/getting-started/getting-started.html")
+#checkPackage("OpenCV_imgproc" "OpenCV imgproc not found, install it from the tutorial at:\n https://www.stereolabs.com/documentation/overview/getting-started/getting-started.html")
 
 find_package(CUDA ${CUDA_VERSION})
 checkPackage("CUDA" "CUDA not found, install it from:\n https://developer.nvidia.com/cuda-downloads")
