@@ -42,7 +42,6 @@
 #include <sensor_msgs/distortion_models.h>
 #include <sensor_msgs/image_encodings.h>
 #include <image_transport/image_transport.h>
-#include <dynamic_reconfigure/server.h>
 #include <zed_wrapper/ZedConfig.h>
 
 #include <opencv2/core/core.hpp>
@@ -51,6 +50,7 @@
 #include <opencv2/calib3d/calib3d.hpp>
 
 #include <boost/make_shared.hpp>
+#include <boost/thread.hpp>
 
 #include <sl/Camera.hpp>
 
