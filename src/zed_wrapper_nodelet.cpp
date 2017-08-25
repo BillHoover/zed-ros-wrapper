@@ -54,8 +54,12 @@
 
 #include <sl/Camera.hpp>
 
+#include <rodan_vr_api/XYZRGB.h>
 #include <rodan_vr_api/SparseXYZRGB.h>
 #include <rodan_vr_api/SparsePointCloud.h>
+#include <rodan_vr_api/CompressedSparsePointCloud.h>
+
+#include "lzf.h"
 
 using namespace std;
 
@@ -236,14 +240,26 @@ namespace zed_wrapper {
             return static_cast<int16_t>(v);
         }
         void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
+            static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
+            static rodan_vr_api::SparsePointCloud Updates;   // deltas from baseline
             // total points is constant
             // check each point and only update ones that are enough different
             if (TotalPoints == 0) {
                 TotalPoints = width * height;
-std::array<int, 100> a;
-a.fill(-1);
-                // since this is the first frame, we must allocate out buffer
+                // reserve space for max for both vectors
+                Baseline.reserve(TotalPoints);
+                Updates.totalpoints = TotalPoints;
+                Updates.data.reserve(TotalPoints);
+                // initialize the entire baseline vector to notvalid
+                rodan_vr_api::SparseXYZRGB notvalid;
+                notvalid.x = notvalid.y = notvalid.z = -32768;
+                notvalid.r = notvalid.g = notvalid.b = 0;
+                notvalid.index1 = notvalid.index2 = notvalid.index3 = 0;
+                for (int i = 0; i < TotalPoints; i++) {
+                    Baseline.push_back(notvalid);
+                }
             }
+            Updates.data.clear();  // No deltas yet
 
             // get the data from ZED
             sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
@@ -252,11 +268,30 @@ a.fill(-1);
                 int16_t y = zedToInt16(cpu_cloud[i][0]);
                 int16_t z = zedToInt16(cpu_cloud[i][1]);
                 int32_t rgb = cpu_cloud[i][3];
+                uint8_t r = 1;
+                uint8_t g = 2;
+                uint8_t b = 3;
+ 
+                // see if different from Baseline, if so update it
+                if ((Baseline[i].x != x) || 
+                    (Baseline[i].y != y) || 
+                    (Baseline[i].z != z) ||
+                    (Baseline[i].r != r) ||
+                    (Baseline[i].g != g) ||
+                    (Baseline[i].b != b)) {
+                    Baseline[i].x = x;
+                    Baseline[i].y = y;
+                    Baseline[i].z = z;
+                    Baseline[i].r = r;
+                    Baseline[i].g = g;
+                    Baseline[i].b = b;
+                    Baseline[i].index1 = Baseline[i].index2 = Baseline[i].index3 = i;
+                    Updates.data.push_back(Baseline[i]);
+                }
             }
-
-            rodan_vr_api::SparsePointCloud output;
-            output.totalpoints = TotalPoints;
-            pub_cloud.publish(output);
+           
+            //NODELET_INFO("Totalpoints " << TotalPoints << ", Update " << Updates.data.size());
+            pub_cloud.publish(Updates);
         }
 
         /* \brief Publish the informations of a camera with a ros Publisher
@@ -294,7 +329,7 @@ a.fill(-1);
             float cx = zedParam.calibration_parameters.left_cam.cx;
             float cy = zedParam.calibration_parameters.left_cam.cy;
 
-            // There is no distorsions since the images are rectified
+            // There is no distortions since the images are rectified
             double k1 = 0;
             double k2 = 0;
             double k3 = 0;
@@ -353,6 +388,7 @@ a.fill(-1);
             int width = zed->getResolution().width;
             int height = zed->getResolution().height;
             NODELET_DEBUG_STREAM("Image size : " << width << "x" << height);
+            NODELET_INFO_STREAM("Image size : " << width << "x" << height);
 
             cv::Size cvSize(width, height);
             cv::Mat leftImRGB(cvSize, CV_8UC3);
@@ -596,6 +632,7 @@ a.fill(-1);
             }
 
             NODELET_INFO_STREAM("SVRT parameters set");
+            NODELET_INFO_STREAM("Size xyz: "<< sizeof(rodan_vr_api::XYZRGB) << "Sparse " << sizeof(rodan_vr_api::SparseXYZRGB) << " PC "<<sizeof(rodan_vr_api::SparsePointCloud));
             // SVRT changes for better point clouds
 
             // disable tracking

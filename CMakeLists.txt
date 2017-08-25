@@ -116,7 +116,7 @@ set(LINK_LIBRARIES
   ${OpenCV_LIBS}
   ${PCL_LIBRARIES})
 
-add_library(ZEDWrapper src/zed_wrapper_nodelet.cpp)
+add_library(ZEDWrapper src/zed_wrapper_nodelet.cpp src/lzf_c.cpp)
 target_link_libraries(ZEDWrapper ${LINK_LIBRARIES})
 add_dependencies(ZEDWrapper ${PROJECT_NAME}_gencfg)
 
