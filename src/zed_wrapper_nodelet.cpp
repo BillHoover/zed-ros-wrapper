@@ -152,14 +152,6 @@ namespace zed_wrapper {
             return cv::Mat((int) mat.getHeight(), (int) mat.getWidth(), cvType, mat.getPtr<sl::uchar1>(sl::MEM_CPU), mat.getStepBytes(sl::MEM_CPU));
         }
 
-        /* \brief Test if a file exist
-         * \param name : the path to the file
-         */
-        bool file_exist(const std::string& name) {
-            struct stat buffer;
-            return (stat(name.c_str(), &buffer) == 0);
-        }
-
         /* \brief Image to ros message conversion
          * \param img : the image to publish
          * \param encodingType : the sensor_msgs::image_encodings encoding type
@@ -230,15 +222,23 @@ namespace zed_wrapper {
         static int16_t zedToInt16(float v)
         {
             // take the ZED value (float meters) and return int16 mm
-            // if -inf, +inf, or NaN, return -32768
+            // limit values to +- 10000
+            // if -inf, +inf, or NaN, or outside range, return -11111
             if (isnanf(v) || isinff(v)) {
-                return -32768;
+                return -11111;
             }
             v *= 1000.0f;
             v += 0.5f;
-            if (v > 32767.0f) v=32767.0f;
+            if (v > 10000.0f)  v=-11111.0f;
+            if (v < -10000.0f) v=-11111.0f;
             return static_cast<int16_t>(v);
         }
+
+        static int dist3ds(int a1, int b1, int c1, int a2, int b2, int c2)
+        {
+            return (a1 - a2) * (a1 - a2) + (b1 - b2) * (b1 - b2) + (c1 - c2) * (c1 - c2);
+        }
+
         void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
             static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
             static rodan_vr_api::SparsePointCloud Updates;   // deltas from baseline
@@ -246,19 +246,22 @@ namespace zed_wrapper {
             // check each point and only update ones that are enough different
             if (TotalPoints == 0) {
                 TotalPoints = width * height;
+
                 // reserve space for max for both vectors
                 Baseline.reserve(TotalPoints);
                 Updates.totalpoints = TotalPoints;
                 Updates.data.reserve(TotalPoints);
+
                 // initialize the entire baseline vector to notvalid
                 rodan_vr_api::SparseXYZRGB notvalid;
-                notvalid.x = notvalid.y = notvalid.z = -32768;
+                notvalid.x = notvalid.y = notvalid.z = -11111;
                 notvalid.r = notvalid.g = notvalid.b = 0;
                 notvalid.index1 = notvalid.index2 = notvalid.index3 = 0;
                 for (int i = 0; i < TotalPoints; i++) {
                     Baseline.push_back(notvalid);
                 }
             }
+
             Updates.data.clear();  // No deltas yet
 
             // get the data from ZED
@@ -273,12 +276,9 @@ namespace zed_wrapper {
                 uint8_t b = 3;
  
                 // see if different from Baseline, if so update it
-                if ((Baseline[i].x != x) || 
-                    (Baseline[i].y != y) || 
-                    (Baseline[i].z != z) ||
-                    (Baseline[i].r != r) ||
-                    (Baseline[i].g != g) ||
-                    (Baseline[i].b != b)) {
+                if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > 9) ||  // 3mm sq dist
+                    (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > 100)) { // 10 sq color
+                    // update baseline with the new values
                     Baseline[i].x = x;
                     Baseline[i].y = y;
                     Baseline[i].z = z;
@@ -286,11 +286,12 @@ namespace zed_wrapper {
                     Baseline[i].g = g;
                     Baseline[i].b = b;
                     Baseline[i].index1 = Baseline[i].index2 = Baseline[i].index3 = i;
+                    // and add the point to the sparse array
                     Updates.data.push_back(Baseline[i]);
                 }
             }
            
-            //NODELET_INFO("Totalpoints " << TotalPoints << ", Update " << Updates.data.size());
+            NODELET_INFO_STREAM("Totalpoints " << TotalPoints << ", Update " << Updates.data.size());
             pub_cloud.publish(Updates);
         }
 
@@ -372,11 +373,6 @@ namespace zed_wrapper {
 
             left_cam_info_msg->header.frame_id = left_frame_id;
             right_cam_info_msg->header.frame_id = right_frame_id;
-        }
-
-        void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
-            NODELET_INFO("Reconfigure confidence : %d", config.confidence);
-            confidence = config.confidence;
         }
 
         void device_poll() {
@@ -555,6 +551,7 @@ namespace zed_wrapper {
             nh_ns.getParam("gpu_id", gpu_id);
             nh_ns.getParam("zed_id", zed_id);
             nh_ns.getParam("depth_stabilization", depth_stabilization);
+            nh_ns.getParam("confidence", confidence);
 
             std::string img_topic = "image_rect_color";
             std::string img_raw_topic = "image_raw_color";
