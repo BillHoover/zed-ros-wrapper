@@ -59,6 +59,8 @@
 #include <rodan_vr_api/SparsePointCloud.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
 
+#define VERY_FAST 0
+#define HLOG 22
 #include "lzf.h"
 
 using namespace std;
@@ -242,6 +244,8 @@ namespace zed_wrapper {
         void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
             static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
             static rodan_vr_api::SparsePointCloud Updates;   // deltas from baseline
+            static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
+            static unsigned int MaxCompressedSize;
             // total points is constant
             // check each point and only update ones that are enough different
             if (TotalPoints == 0) {
@@ -251,6 +255,8 @@ namespace zed_wrapper {
                 Baseline.reserve(TotalPoints);
                 Updates.totalpoints = TotalPoints;
                 Updates.data.reserve(TotalPoints);
+                MaxCompressedSize = LZF_MAX_COMPRESSED_SIZE(TotalPoints * sizeof(rodan_vr_api::SparseXYZRGB));
+                CompressedUpdates.data.reserve(MaxCompressedSize);
 
                 // initialize the entire baseline vector to notvalid
                 rodan_vr_api::SparseXYZRGB notvalid;
@@ -276,7 +282,7 @@ namespace zed_wrapper {
                 uint8_t b = 3;
  
                 // see if different from Baseline, if so update it
-                if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > 9) ||  // 3mm sq dist
+                if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > 625) ||  // 25mm sq dist
                     (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > 100)) { // 10 sq color
                     // update baseline with the new values
                     Baseline[i].x = x;
@@ -293,6 +299,13 @@ namespace zed_wrapper {
            
             NODELET_INFO_STREAM("Totalpoints " << TotalPoints << ", Update " << Updates.data.size());
             pub_cloud.publish(Updates);
+            // compress it to see how that helps
+            CompressedUpdates.data.resize(MaxCompressedSize);
+            unsigned int cs = lzf_compress (&Updates.data[0], Updates.data.size() * sizeof(Updates.data[0]),
+                                            &CompressedUpdates.data[0], MaxCompressedSize);
+            CompressedUpdates.data.resize(cs);
+            NODELET_INFO_STREAM("Totalpoints " << TotalPoints << ", Update " << Updates.data.size() <<
+                                ", Compressed " << CompressedUpdates.data.size());
         }
 
         /* \brief Publish the informations of a camera with a ros Publisher
@@ -629,7 +642,6 @@ namespace zed_wrapper {
             }
 
             NODELET_INFO_STREAM("SVRT parameters set");
-            NODELET_INFO_STREAM("Size xyz: "<< sizeof(rodan_vr_api::XYZRGB) << "Sparse " << sizeof(rodan_vr_api::SparseXYZRGB) << " PC "<<sizeof(rodan_vr_api::SparsePointCloud));
             // SVRT changes for better point clouds
 
             // disable tracking
