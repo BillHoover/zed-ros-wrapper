@@ -54,9 +54,7 @@
 
 #include <sl/Camera.hpp>
 
-#include <rodan_vr_api/XYZRGB.h>
 #include <rodan_vr_api/SparseXYZRGB.h>
-#include <rodan_vr_api/SparsePointCloud.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
 
 #define VERY_FAST 0
@@ -243,7 +241,7 @@ namespace zed_wrapper {
 
         void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
             static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
-            static rodan_vr_api::SparsePointCloud Updates;   // deltas from baseline
+            static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
             static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
             static unsigned int MaxCompressedSize;
             // total points is constant
@@ -253,9 +251,9 @@ namespace zed_wrapper {
 
                 // reserve space for max for both vectors
                 Baseline.reserve(TotalPoints);
-                Updates.totalpoints = TotalPoints;
-                Updates.data.reserve(TotalPoints);
+                Updates.reserve(TotalPoints);
                 MaxCompressedSize = LZF_MAX_COMPRESSED_SIZE(TotalPoints * sizeof(rodan_vr_api::SparseXYZRGB));
+                CompressedUpdates.totalpoints = TotalPoints;
                 CompressedUpdates.data.reserve(MaxCompressedSize);
 
                 // initialize the entire baseline vector to notvalid
@@ -268,7 +266,7 @@ namespace zed_wrapper {
                 }
             }
 
-            Updates.data.clear();  // No deltas yet
+            Updates.clear();  // No deltas yet
 
             // get the data from ZED
             sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
@@ -293,19 +291,23 @@ namespace zed_wrapper {
                     Baseline[i].b = b;
                     Baseline[i].index1 = Baseline[i].index2 = Baseline[i].index3 = i;
                     // and add the point to the sparse array
-                    Updates.data.push_back(Baseline[i]);
+                    Updates.push_back(Baseline[i]);
                 }
             }
            
-            NODELET_INFO_STREAM("Totalpoints " << TotalPoints << ", Update " << Updates.data.size());
-            pub_cloud.publish(Updates);
-            // compress it to see how that helps
-            CompressedUpdates.data.resize(MaxCompressedSize);
-            unsigned int cs = lzf_compress (&Updates.data[0], Updates.data.size() * sizeof(Updates.data[0]),
+            // compress it
+            CompressedUpdates.data.resize(MaxCompressedSize);  // first make sure we could store max size
+            unsigned int cs = lzf_compress (&Updates[0], Updates.size() * sizeof(Updates[0]),
                                             &CompressedUpdates.data[0], MaxCompressedSize);
-            CompressedUpdates.data.resize(cs);
-            NODELET_INFO_STREAM("Totalpoints " << TotalPoints << ", Update " << Updates.data.size() <<
-                                ", Compressed " << CompressedUpdates.data.size());
+            CompressedUpdates.data.resize(cs);  // set it to proper compressed size
+            pub_cloud.publish(CompressedUpdates);
+            float r1 = 32. / 12.;
+            float r2 = (double)TotalPoints / (double) Updates.size();
+            float r3 = ((double)Updates.size() * sizeof(Updates[0])) / 
+                       ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
+            float r4 = ((double)TotalPoints * 32.) / 
+                       ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
+            NODELET_INFO_STREAM("Ratios: " << r1 << ", " << r2 << ", " << r3 << ", " << r4);
         }
 
         /* \brief Publish the informations of a camera with a ros Publisher
@@ -692,8 +694,8 @@ namespace zed_wrapper {
             pub_depth = it_zed.advertise(depth_topic, 1); //depth
             NODELET_INFO_STREAM("Advertized on topic " << depth_topic);
 
-            //SparsePointCloud publisher
-            pub_cloud = nh.advertise<rodan_vr_api::SparsePointCloud> (point_cloud_topic, 1);
+            //CompressedSparsePointCloud publisher
+            pub_cloud = nh.advertise<rodan_vr_api::CompressedSparsePointCloud> (point_cloud_topic, 1);
             NODELET_INFO_STREAM("Advertized on topic " << point_cloud_topic);
 
             // Camera info publishers
