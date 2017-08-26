@@ -113,8 +113,6 @@ namespace zed_wrapper {
         string right_frame_id = "";
         string left_frame_id = "";
 
-        int32_t TotalPoints = 0;
-
         /* \brief Convert an sl:Mat to a cv::Mat
          * \param mat : the sl::Mat to convert
          */
@@ -244,6 +242,10 @@ namespace zed_wrapper {
             static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
             static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
             static unsigned int MaxCompressedSize;
+            static int32_t TotalPoints = 0;
+            static int32_t frameNumber = 0;
+
+            frameNumber++;
             // total points is constant
             // check each point and only update ones that are enough different
             if (TotalPoints == 0) {
@@ -274,14 +276,14 @@ namespace zed_wrapper {
                 int16_t x = zedToInt16(cpu_cloud[i][2]);
                 int16_t y = zedToInt16(cpu_cloud[i][0]);
                 int16_t z = zedToInt16(cpu_cloud[i][1]);
-                int32_t rgb = cpu_cloud[i][3];
-                uint8_t r = 1;
-                uint8_t g = 2;
-                uint8_t b = 3;
+                uint8_t* cp = (uint8_t*)&cpu_cloud[i][3];
+                uint8_t r = cp[0];
+                uint8_t g = cp[1];
+                uint8_t b = cp[2];
  
                 // see if different from Baseline, if so update it
                 if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > 625) ||  // 25mm sq dist
-                    (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > 100)) { // 10 sq color
+                    (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > 625)) {  // 25 sq color
                     // update baseline with the new values
                     Baseline[i].x = x;
                     Baseline[i].y = y;
@@ -289,7 +291,10 @@ namespace zed_wrapper {
                     Baseline[i].r = r;
                     Baseline[i].g = g;
                     Baseline[i].b = b;
-                    Baseline[i].index1 = Baseline[i].index2 = Baseline[i].index3 = i;
+                    uint8_t* pp = (uint8_t*)&i;
+                    Baseline[i].index1 = pp[0];
+                    Baseline[i].index2 = pp[1];
+                    Baseline[i].index3 = pp[3];
                     // and add the point to the sparse array
                     Updates.push_back(Baseline[i]);
                 }
@@ -307,7 +312,9 @@ namespace zed_wrapper {
                        ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
             float r4 = ((double)TotalPoints * 32.) / 
                        ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
-            NODELET_INFO_STREAM("Ratios: " << r1 << ", " << r2 << ", " << r3 << ", " << r4);
+            if ((frameNumber % 150) == 0) {  // report every 10 secs
+                NODELET_INFO_STREAM("Frame: " << frameNumber << ", Ratios: " << r1 << ", " << r2 << ", " << r3 << ", " << r4);
+            }
         }
 
         /* \brief Publish the informations of a camera with a ros Publisher
@@ -399,7 +406,6 @@ namespace zed_wrapper {
             int width = zed->getResolution().width;
             int height = zed->getResolution().height;
             NODELET_DEBUG_STREAM("Image size : " << width << "x" << height);
-            NODELET_INFO_STREAM("Image size : " << width << "x" << height);
 
             cv::Size cvSize(width, height);
             cv::Mat leftImRGB(cvSize, CV_8UC3);
