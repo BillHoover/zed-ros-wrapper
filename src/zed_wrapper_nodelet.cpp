@@ -42,6 +42,7 @@
 #include <sensor_msgs/distortion_models.h>
 #include <sensor_msgs/image_encodings.h>
 #include <image_transport/image_transport.h>
+#include <dynamic_reconfigure/server.h>
 #include <zed_wrapper/ZedConfig.h>
 
 #include <opencv2/core/core.hpp>
@@ -96,7 +97,11 @@ namespace zed_wrapper {
         std::unique_ptr<sl::Camera> zed;
 
         // flags
-        int confidence;
+        int confidence = 100;
+        int sparsepointdistsq = 625;
+        int sparsecolordistsq = 625;
+        int updatepercent = 10;
+
         bool computeDepth;
         bool grabbing = false;
         int openniDepthMode = 0; // 16 bit UC data in mm else 32F in m, for more info http://www.ros.org/reps/rep-0118.html
@@ -282,8 +287,8 @@ namespace zed_wrapper {
                 uint8_t b = cp[2];
  
                 // see if different from Baseline, if so update it
-                if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > 625) ||  // 25mm sq dist
-                    (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > 625)) {  // 25 sq color
+                if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
+                    (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > sparsecolordistsq)) {
                     // update baseline with the new values
                     Baseline[i].x = x;
                     Baseline[i].y = y;
@@ -395,6 +400,17 @@ namespace zed_wrapper {
 
             left_cam_info_msg->header.frame_id = left_frame_id;
             right_cam_info_msg->header.frame_id = right_frame_id;
+        }
+
+       void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
+            NODELET_INFO("Reconfigure: confidence %d", config.confidence);
+            NODELET_INFO("Reconfigure: Dist between points %d", config.sparsepointdist);
+            NODELET_INFO("Reconfigure: Dist between colors %d", config.sparsecolordist);
+            NODELET_INFO("Reconfigure: Percentage to update each frame %d", config.updatepercent);
+            confidence = config.confidence;
+            sparsepointdistsq = config.sparsepointdist * config.sparsepointdist;
+            sparsecolordistsq = config.sparsecolordist * config.sparsecolordist;
+            updatepercent = config.updatepercent;
         }
 
         void device_poll() {
@@ -551,6 +567,8 @@ namespace zed_wrapper {
             zed.reset();
         }
 
+        boost::shared_ptr<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>> server;
+
         void onInit() {
             // Launch file parameters
             resolution = sl::RESOLUTION_HD720;
@@ -682,6 +700,13 @@ namespace zed_wrapper {
             //zed->setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, -1, true);
             // 2800 to 6500 by 100, -1 is Auto White Balance
             //zed->setCameraSettings(sl::CAMERA_SETTINGS_WHITEBALANCE, -1, true);
+
+            //Reconfigure for various parameters
+            server = boost::make_shared<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>>();
+            dynamic_reconfigure::Server<zed_wrapper::ZedConfig>::CallbackType f;
+            f = boost::bind(&ZEDWrapperNodelet::callback, this, _1, _2);
+            server->setCallback(f);
+
             // Create all the publishers
             // Image publishers
             image_transport::ImageTransport it_zed(nh);
