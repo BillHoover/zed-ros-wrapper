@@ -299,7 +299,7 @@ namespace zed_wrapper {
                     uint8_t* pp = (uint8_t*)&i;
                     Baseline[i].index1 = pp[0];
                     Baseline[i].index2 = pp[1];
-                    Baseline[i].index3 = pp[3];
+                    Baseline[i].index3 = pp[2];
                     // and add the point to the sparse array
                     Updates.push_back(Baseline[i]);
                 }
