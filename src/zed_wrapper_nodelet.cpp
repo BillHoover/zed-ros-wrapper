@@ -101,6 +101,8 @@ namespace zed_wrapper {
         int sparsepointdistsq = 625;
         int sparsecolordistsq = 625;
         int updatepercent = 10;
+        int agelimit = 100;  // in frames
+        int reportevery = 150; // in frames
 
         bool computeDepth;
         bool grabbing = false;
@@ -244,7 +246,9 @@ namespace zed_wrapper {
 
         void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
             static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
+            static std::vector<int32_t> BaselineLastUpdate; // frameNumber last updated
             static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
+            static rodan_vr_api::SparseXYZRGB notvalid;
             static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
             static unsigned int MaxCompressedSize;
             static int32_t TotalPoints = 0;
@@ -258,18 +262,30 @@ namespace zed_wrapper {
 
                 // reserve space for max for both vectors
                 Baseline.reserve(TotalPoints);
+                BaselineLastUpdate.reserve(TotalPoints);
                 Updates.reserve(TotalPoints);
                 MaxCompressedSize = LZF_MAX_COMPRESSED_SIZE(TotalPoints * sizeof(rodan_vr_api::SparseXYZRGB));
                 CompressedUpdates.totalpoints = TotalPoints;
                 CompressedUpdates.data.reserve(MaxCompressedSize);
 
-                // initialize the entire baseline vector to notvalid
-                rodan_vr_api::SparseXYZRGB notvalid;
+                // init the notvalid entry
                 notvalid.x = notvalid.y = notvalid.z = -11111;
                 notvalid.r = notvalid.g = notvalid.b = 0;
                 notvalid.index1 = notvalid.index2 = notvalid.index3 = 0;
+
+                // initialize the entire baseline vector to notvalid
                 for (int i = 0; i < TotalPoints; i++) {
-                    Baseline.push_back(notvalid);
+                    Baseline[i] = notvalid;
+                    BaselineLastUpdate[i] = 0;
+                }
+            }
+
+            // go through and invalidate any entries older than age limit
+            int lastValidFrame = frameNumber - agelimit;
+            for (int i = 0; i < TotalPoints; i++) {
+                if (BaselineLastUpdate[i] < lastValidFrame) {
+                    Baseline[i] = notvalid;
+                    BaselineLastUpdate[i] = 0;
                 }
             }
 
@@ -302,6 +318,7 @@ namespace zed_wrapper {
                     Baseline[i].index3 = pp[2];
                     // and add the point to the sparse array
                     Updates.push_back(Baseline[i]);
+                    BaselineLastUpdate[i] = frameNumber;
                 }
             }
            
@@ -317,8 +334,15 @@ namespace zed_wrapper {
                        ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
             float r4 = ((double)TotalPoints * 32.) / 
                        ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
-            if ((frameNumber % 150) == 0) {  // report every 10 secs
-                NODELET_INFO_STREAM("Frame: " << frameNumber << ", Ratios: " << r1 << ", " << r2 << ", " << r3 << ", " << r4);
+            float dataRate = (double)CompressedUpdates.data.size() * 
+                             sizeof(CompressedUpdates.data[0]) * 8.0 * rate /
+                             (1000.0 * 1000.0); // rate in Mbps needed
+            if ((frameNumber % reportevery) == 0) { 
+                NODELET_INFO_STREAM(std::setprecision(2) << std::fixed << 
+                    "Frame: " << frameNumber << 
+                    ", Ratios: " << r1 << ", " << r2 << 
+                    ", " << r3 << ", " << r4 << 
+                    ", " << dataRate << "Mbps");
             }
         }
 
@@ -407,10 +431,14 @@ namespace zed_wrapper {
             NODELET_INFO("Reconfigure: Dist between points %d", config.sparsepointdist);
             NODELET_INFO("Reconfigure: Dist between colors %d", config.sparsecolordist);
             NODELET_INFO("Reconfigure: Percentage to update each frame %d", config.updatepercent);
+            NODELET_INFO("Reconfigure: Age limit in frames %d", config.agelimit);
+            NODELET_INFO("Reconfigure: Report every n frames %d", config.reportevery);
             confidence = config.confidence;
             sparsepointdistsq = config.sparsepointdist * config.sparsepointdist;
             sparsecolordistsq = config.sparsecolordist * config.sparsecolordist;
             updatepercent = config.updatepercent;
+            agelimit = config.agelimit;
+            reportevery = config.reportevery;
         }
 
         void device_poll() {
