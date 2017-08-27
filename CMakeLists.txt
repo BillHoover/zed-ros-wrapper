@@ -124,6 +124,9 @@ add_executable(zed_wrapper_node src/zed_wrapper_node.cpp)
 target_link_libraries(zed_wrapper_node ZEDWrapper ${LINK_LIBRARIES})
 add_dependencies(zed_wrapper_node ${PROJECT_NAME}_gencfg)
 
+add_executable(sparse_pointcloud_node src/sparse_pointcloud_node.cpp src/lzf_d.cpp)
+target_link_libraries(sparse_pointcloud_node ${LINK_LIBRARIES})
+
 ###############################################################################
 
 #Add all files in subdirectories of the project in
