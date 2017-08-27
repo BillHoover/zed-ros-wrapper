@@ -254,6 +254,13 @@ namespace zed_wrapper {
             static int32_t TotalPoints = 0;
             static int32_t frameNumber = 0;
 
+            // set up randon number generator
+            // Seed with a real random value, if available
+            static std::random_device r;
+ 
+            static std::minstd_rand e1(r());
+            static std::uniform_int_distribution<int> uniform_dist(1, 100);
+
             frameNumber++;
             // total points is constant
             // check each point and only update ones that are enough different
@@ -305,6 +312,9 @@ namespace zed_wrapper {
                 // see if different from Baseline, if so update it
                 if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
                     (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > sparsecolordistsq)) {
+                    // see if it is one of the ones we want based on percentage
+                    if (uniform_dist(e1) > updatepercent) continue; 
+
                     // update baseline with the new values
                     Baseline[i].x = x;
                     Baseline[i].y = y;
