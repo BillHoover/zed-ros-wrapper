@@ -9,6 +9,7 @@ static ros::Publisher pub;
 static pcl::PointCloud<pcl::PointXYZRGB> cloud;
 static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
 static int TotalPoints = 0;
+static int seq = 0;
 
 static float zedFromInt16(int16_t v)
 {
@@ -30,6 +31,7 @@ void cb(const rodan_vr_api::CompressedSparsePointCloud compressed)
             cloud[i].x = cloud[i].y = cloud[i].z = NAN;
             cloud[i].r = cloud[i].g = cloud[i].b = 0;
         }
+        cloud.header.frame_id = "zed_center";
     }
 
     // have a compressed point cloud, first decompress to get the sparse data
@@ -51,6 +53,8 @@ void cb(const rodan_vr_api::CompressedSparsePointCloud compressed)
         cloud[i].g = Updates[n].g;
         cloud[i].b = Updates[n].b;
     }
+    cloud.header.seq = seq++;
+    cloud.header.stamp = ros::Time::now().toNSec()/1000;  // need usec
     pub.publish(cloud);
 }
 

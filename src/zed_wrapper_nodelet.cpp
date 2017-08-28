@@ -305,9 +305,9 @@ namespace zed_wrapper {
                 int16_t y = zedToInt16(cpu_cloud[i][0]);
                 int16_t z = zedToInt16(cpu_cloud[i][1]);
                 uint8_t* cp = (uint8_t*)&cpu_cloud[i][3];
-                uint8_t r = cp[0];
+                uint8_t r = cp[2];
                 uint8_t g = cp[1];
-                uint8_t b = cp[2];
+                uint8_t b = cp[0];
  
                 // see if different from Baseline, if so update it
                 if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
