@@ -31,7 +31,7 @@ void cb(const rodan_vr_api::CompressedSparsePointCloud compressed)
             cloud[i].x = cloud[i].y = cloud[i].z = NAN;
             cloud[i].r = cloud[i].g = cloud[i].b = 0;
         }
-        cloud.header.frame_id = "zed_center";
+        cloud.header.frame_id = "zed_left_camera";
     }
 
     // have a compressed point cloud, first decompress to get the sparse data
@@ -47,8 +47,8 @@ void cb(const rodan_vr_api::CompressedSparsePointCloud compressed)
         pp[1] = Updates[n].index2;
         pp[2] = Updates[n].index3;
         cloud[i].x = zedFromInt16(Updates[n].x);
-        cloud[i].y = zedFromInt16(Updates[n].y);
-        cloud[i].z = zedFromInt16(Updates[n].z);
+        cloud[i].y = -zedFromInt16(Updates[n].y);  // seems to be some diff pcl/ros
+        cloud[i].z = -zedFromInt16(Updates[n].z);  // seems to be some diff pcl/ros
         cloud[i].r = Updates[n].r;
         cloud[i].g = Updates[n].g;
         cloud[i].b = Updates[n].b;
