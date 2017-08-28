@@ -72,7 +72,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
         <param name="depth_topic"           value="depth/depth_registered" />
         <param name="depth_cam_info_topic"  value="depth/camera_info" />
 
-        <param name="point_cloud_topic"     value="point_cloud/cloud_registered" />
+        <param name="point_cloud_topic"     value="point_cloud/compressed" />
 
         <param name="odometry_topic"        value="odom" />
 
