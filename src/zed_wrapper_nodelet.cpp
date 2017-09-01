@@ -44,6 +44,12 @@
 #include <image_transport/image_transport.h>
 #include <dynamic_reconfigure/server.h>
 #include <zed_wrapper/ZedConfig.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/TransformStamped.h>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -82,6 +88,10 @@ namespace zed_wrapper {
         ros::Publisher pub_left_cam_info;
         ros::Publisher pub_right_cam_info;
         ros::Publisher pub_depth_cam_info;
+
+        // initialization Transform listener
+        boost::shared_ptr<tf2_ros::Buffer> tfBuffer;
+        boost::shared_ptr<tf2_ros::TransformListener> tf_listener;
 
         // Launch file parameters
         int resolution;
@@ -300,12 +310,32 @@ namespace zed_wrapper {
 
             Updates.clear();  // No deltas yet
 
+            // Transform from zed_left_camera to rodan_vr_frame
+            tf2::Transform camera_to_vr;
+            try {
+                geometry_msgs::TransformStamped c2v = tfBuffer->lookupTransform("rodan_vr_frame", "zed_left_camera", point_cloud_time);
+                tf2::fromMsg(c2v.transform, camera_to_vr);
+
+            } catch (tf2::TransformException &ex) {
+              ROS_WARN_THROTTLE(10.0, "The tf from '%s' to '%s' does not seem to be available, "
+                                      "will assume it as identity!",
+                                      "zed_left_camera",
+                                      "rodan_vr_frame");
+              ROS_DEBUG("Transform error: %s", ex.what());
+              camera_to_vr.setIdentity();
+            }
+
             // get the data from ZED
             sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
             for (int i = 0; i < TotalPoints; i++) {
-                int16_t x = zedToInt16(cpu_cloud[i][2]);
-                int16_t y = zedToInt16(cpu_cloud[i][0]);
-                int16_t z = zedToInt16(cpu_cloud[i][1]);
+                Point cameraPoint, vrPoint;
+                cameraPoint.x = cpu_cloud[i][2];
+                cameraPoint.y = cpu_cloud[i][0];
+                cameraPoint.z = cpu_cloud[i][1];
+                vrPoint = cameraPoint * camera_to_vr;
+                int16_t x = zedToInt16(vrPoint.x);
+                int16_t y = zedToInt16(vrPoint.y);
+                int16_t z = zedToInt16(vrPoint.z);
                 uint8_t* cp = (uint8_t*)&cpu_cloud[i][3];
                 uint8_t r = cp[2];
                 uint8_t g = cp[1];
@@ -691,6 +721,10 @@ namespace zed_wrapper {
             nh_ns.getParam("depth_cam_info_topic", depth_cam_info_topic);
 
             nh_ns.getParam("point_cloud_topic", point_cloud_topic);
+
+            // Initialization transformation listener
+            tfBuffer.reset( new tf2_ros::Buffer );
+            tf_listener.reset( new tf2_ros::TransformListener(*tfBuffer) );
 
             // Create the ZED object
             zed.reset(new sl::Camera());
