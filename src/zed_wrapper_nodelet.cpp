@@ -100,6 +100,8 @@ namespace zed_wrapper {
         int confidence = 100;
         int sparsepointdistsq = 625;
         int sparsecolordistsq = 625;
+        int sparsepointdistsqimmediate = 2500;
+        int sparsecolordistsqimmediate = 2500;
         int updatepercent = 10;
         int agelimit = 100;  // in frames
         int reportevery = 150; // in frames
@@ -312,8 +314,13 @@ namespace zed_wrapper {
                 // see if different from Baseline, if so update it
                 if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
                     (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > sparsecolordistsq)) {
+                    // OK, it met the first delta criterion
+                    // now check if it is bad enough that we must, or the 
+                    // proper percentage
                     // see if it is one of the ones we want based on percentage
-                    if (uniform_dist(e1) > updatepercent) continue; 
+                    if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) <= sparsepointdistsqimmediate) &&
+                        (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) <= sparsecolordistsqimmediate) &&
+                        (uniform_dist(e1) > updatepercent)) continue; 
 
                     // update baseline with the new values
                     Baseline[i].x = x;
@@ -440,12 +447,18 @@ namespace zed_wrapper {
             NODELET_INFO("Reconfigure: confidence %d", config.confidence);
             NODELET_INFO("Reconfigure: Dist between points %d", config.sparsepointdist);
             NODELET_INFO("Reconfigure: Dist between colors %d", config.sparsecolordist);
+            NODELET_INFO("Reconfigure: Dist between points immediate %d", config.sparsepointdistimmediate);
+            NODELET_INFO("Reconfigure: Dist between colors immediate %d", config.sparsecolordistimmediate);
             NODELET_INFO("Reconfigure: Percentage to update each frame %d", config.updatepercent);
             NODELET_INFO("Reconfigure: Age limit in frames %d", config.agelimit);
             NODELET_INFO("Reconfigure: Report every n frames %d", config.reportevery);
             confidence = config.confidence;
             sparsepointdistsq = config.sparsepointdist * config.sparsepointdist;
             sparsecolordistsq = config.sparsecolordist * config.sparsecolordist;
+            sparsepointdistsqimmediate = 
+                config.sparsepointdistimmediate * config.sparsepointdistimmediate;
+            sparsecolordistsqimmediate = 
+                config.sparsecolordistimmediate * config.sparsecolordistimmediate;
             updatepercent = config.updatepercent;
             agelimit = config.agelimit;
             reportevery = config.reportevery;
