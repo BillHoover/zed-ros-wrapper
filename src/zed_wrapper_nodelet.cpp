@@ -50,6 +50,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/TransformStamped.h>
+#include <tf2/LinearMath/Vector3.h>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -328,14 +329,14 @@ namespace zed_wrapper {
             // get the data from ZED
             sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
             for (int i = 0; i < TotalPoints; i++) {
-                Point cameraPoint, vrPoint;
-                cameraPoint.x = cpu_cloud[i][2];
-                cameraPoint.y = cpu_cloud[i][0];
-                cameraPoint.z = cpu_cloud[i][1];
-                vrPoint = cameraPoint * camera_to_vr;
-                int16_t x = zedToInt16(vrPoint.x);
-                int16_t y = zedToInt16(vrPoint.y);
-                int16_t z = zedToInt16(vrPoint.z);
+                tf2::Vector3 cameraPoint, vrPoint;
+                cameraPoint = tf2::Vector3(cpu_cloud[i][2],
+                                           cpu_cloud[i][0],
+                                           cpu_cloud[i][1]);
+                vrPoint = camera_to_vr * cameraPoint;
+                int16_t x = zedToInt16(vrPoint.x());
+                int16_t y = zedToInt16(vrPoint.y());
+                int16_t z = zedToInt16(vrPoint.z());
                 uint8_t* cp = (uint8_t*)&cpu_cloud[i][3];
                 uint8_t r = cp[2];
                 uint8_t g = cp[1];
