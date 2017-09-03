@@ -311,16 +311,16 @@ namespace zed_wrapper {
 
             Updates.clear();  // No deltas yet
 
-            // Transform from zed_left_camera to rodan_vr_frame
+            // Transform from zed_initial_frame to rodan_vr_frame
             tf2::Transform camera_to_vr;
             try {
-                geometry_msgs::TransformStamped c2v = tfBuffer->lookupTransform("rodan_vr_frame", "zed_left_camera", point_cloud_time);
+                geometry_msgs::TransformStamped c2v = tfBuffer->lookupTransform("rodan_vr_frame", "zed_initial_frame", point_cloud_time);
                 tf2::fromMsg(c2v.transform, camera_to_vr);
 
             } catch (tf2::TransformException &ex) {
               ROS_WARN_THROTTLE(10.0, "The tf from '%s' to '%s' does not seem to be available, "
                                       "will assume it as identity!",
-                                      "zed_left_camera",
+                                      "zed_initial_frame",
                                       "rodan_vr_frame");
               ROS_DEBUG("Transform error: %s", ex.what());
               camera_to_vr.setIdentity();
@@ -331,8 +331,8 @@ namespace zed_wrapper {
             for (int i = 0; i < TotalPoints; i++) {
                 tf2::Vector3 cameraPoint, vrPoint;
                 cameraPoint = tf2::Vector3(cpu_cloud[i][2],
-                                           cpu_cloud[i][0],
-                                           cpu_cloud[i][1]);
+                                           -cpu_cloud[i][0],
+                                           -cpu_cloud[i][1]);
                 vrPoint = camera_to_vr * cameraPoint;
                 int16_t x = zedToInt16(vrPoint.x());
                 int16_t y = zedToInt16(vrPoint.y());
