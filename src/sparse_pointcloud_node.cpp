@@ -31,7 +31,7 @@ void cb(const rodan_vr_api::CompressedSparsePointCloud compressed)
             cloud[i].x = cloud[i].y = cloud[i].z = NAN;
             cloud[i].r = cloud[i].g = cloud[i].b = 0;
         }
-        cloud.header.frame_id = "zed_left_camera";
+        cloud.header.frame_id = "rodan_vr_frame";
     }
 
     // have a compressed point cloud, first decompress to get the sparse data
