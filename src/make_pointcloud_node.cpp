@@ -10,14 +10,14 @@
 #include <ros/ros.h>
 #include "pcl_ros/point_cloud.h"
 #include <image_transport/image_transport.h>
-#include <image_transport/subscriber_filter.h>
+//#include <image_transport/subscriber_filter.h>
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <depth_image_proc/depth_traits.h>
-#include <cv_bridge/cv_bridge.h>
-#include <opencv2/imgproc/imgproc.hpp>
+//#include <cv_bridge/cv_bridge.h>
+//#include <opencv2/imgproc/imgproc.hpp>
 
 namespace enc = sensor_msgs::image_encodings;
 
@@ -26,8 +26,6 @@ ros::Publisher pub_point_cloud_;
 image_geometry::PinholeCameraModel model_;
 static ros::Publisher pub;
 static ros::Subscriber infoSub;
-static ros::Subscriber depthSub;
-static ros::Subscriber rgbSub;
 static int TotalPoints = 0;
 static int Width = 0;
 static int Height = 0;
@@ -179,16 +177,16 @@ static pcl::PointCloud<pcl::PointXYZRGB> cloud;
 int main(int argc, char** argv) {
     ros::init(argc, argv, "make_pointcloud_node");
     ros::NodeHandle nh;
+    image_transport::ImageTransport it(nh);
     
     infoSub = 
         nh.subscribe<sensor_msgs::CameraInfoConstPtr>("/zed/depth/camera_info", 1, infoCb);
-    depthSub = 
-        nh.subscribe<sensor_msgs::ImageConstPtr>("/zed/depth/depth_registered", 1, depthCb);
+    image_transport::Subscriber depthSub = it.subscribe("/zed/depth/depth_registered", 1, depthCb);
+
     pub = nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> >("pointcloud", 1);
     sleep(1);  // not the right way, want to make sure get info and depth
 
-    rgbSub = 
-        nh.subscribe<sensor_msgs::ImageConstPtr>("/zed/rgb/image_rect_color", 1, rgbCb);
+    image_transport::Subscriber rgbSub = it.subscribe("/zed/rgb/image_rect_color", 1, rgbCb);
 
     ros::spin();
 
