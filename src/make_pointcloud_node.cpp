@@ -10,14 +10,14 @@
 #include <ros/ros.h>
 #include "pcl_ros/point_cloud.h"
 #include <image_transport/image_transport.h>
-//#include <image_transport/subscriber_filter.h>
 #include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <depth_image_proc/depth_traits.h>
-//#include <cv_bridge/cv_bridge.h>
-//#include <opencv2/imgproc/imgproc.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/imgcodecs.hpp>
 
 namespace enc = sensor_msgs::image_encodings;
 
@@ -30,7 +30,6 @@ static int TotalPoints = 0;
 static int Width = 0;
 static int Height = 0;
 static int seq = 0;
-static bool FirstRgb = true;
 static sensor_msgs::ImageConstPtr Latest_depth_msg;
 
 void convert(const sensor_msgs::ImageConstPtr& depth_msg,
@@ -103,6 +102,7 @@ void infoCb(const sensor_msgs::CameraInfoConstPtr info_msg)
 
 void depthCb(const sensor_msgs::ImageConstPtr depth_msg)
 {
+ROS_ERROR("Got depth");
     // if this is the first time called, init some things
     if (TotalPoints == 0) {
         if (depth_msg->encoding != enc::TYPE_16UC1) {
@@ -117,21 +117,9 @@ void depthCb(const sensor_msgs::ImageConstPtr depth_msg)
     Latest_depth_msg = depth_msg;
 }
 
-void rgbCb(const sensor_msgs::ImageConstPtr rgb_msg)
+void rgbCb(const sensor_msgs::CompressedImageConstPtr rgb_msg)
 {
-    // If this is the first time called, sanity check some things
-    if (FirstRgb) {
-        FirstRgb = false;
-        if (rgb_msg->encoding != enc::BGR8) {
-            ROS_ERROR("Incorrect rgb encoding");
-            abort();
-        }
-        if ((rgb_msg->width != Width) || (rgb_msg->height != Height)) {
-            ROS_ERROR("Depth and rgn mismatch");
-            abort();
-        }
-    }
-
+ROS_ERROR("Got rgb");
     // Allocate new point cloud message
     PointCloud::Ptr Cloud_msg(new PointCloud);
     Cloud_msg->height = Latest_depth_msg->height;
@@ -139,40 +127,15 @@ void rgbCb(const sensor_msgs::ImageConstPtr rgb_msg)
     Cloud_msg->is_dense = false;
     Cloud_msg->is_bigendian = false;
 
+    cv::Mat image = cv::imdecode(cv::Mat(rgb_msg->data),1);//convert compressed image data to cv::Mat
     sensor_msgs::PointCloud2Modifier pcd_modifier(*Cloud_msg);
     pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
-    convert(Latest_depth_msg, rgb_msg, Cloud_msg);
+    //convert(Latest_depth_msg, image, Cloud_msg);
     Cloud_msg->header.seq = seq++;
     Cloud_msg->header.stamp = rgb_msg->header.stamp;  // use rgb timestamp
     Cloud_msg->header.frame_id = "rodan_vr_frame";
     pub.publish(Cloud_msg);
 }
-
-#ifdef NOTNOW
-
-static pcl::PointCloud<pcl::PointXYZRGB> cloud;
-        cloud.resize(TotalPoints);  // always this many points
-  boost::shared_ptr<image_transport::ImageTransport> rgb_it_, depth_it_;
-  
-  // Subscriptions
-  image_transport::SubscriberFilter sub_depth_, sub_rgb_;
-
-  rgb_it_  .reset( new image_transport::ImageTransport(*rgb_nh_) );
-  depth_it_.reset( new image_transport::ImageTransport(depth_nh) );
-
-    // parameter for depth_image_transport hint
-    std::string depth_image_transport_param = "depth_image_transport";
-
-    // depth image can use different transport.(e.g. compressedDepth)
-    image_transport::TransportHints depth_hints("raw",ros::TransportHints(), private_nh, depth_image_transport_param);
-    sub_depth_.subscribe(*depth_it_, "image_rect",       1, depth_hints);
-
-    // rgb uses normal ros transport hints.
-    image_transport::TransportHints hints("raw", ros::TransportHints(), private_nh);
-    sub_rgb_  .subscribe(*rgb_it_,   "image_rect_color", 1, hints);
-    sub_info_ .subscribe(*rgb_nh_,   "camera_info",      1);
-
-#endif
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "make_pointcloud_node");
@@ -186,7 +149,8 @@ int main(int argc, char** argv) {
     pub = nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> >("pointcloud", 1);
     sleep(1);  // not the right way, want to make sure get info and depth
 
-    image_transport::Subscriber rgbSub = it.subscribe("/zed/rgb/image_rect_color", 1, rgbCb);
+    ros::Subscriber rgbSub = 
+        nh.subscribe<sensor_msgs::CompressedImageConstPtr>("/zed/rgb/image_rect_color/compressed", 1, rgbCb);
 
     ros::spin();
 
