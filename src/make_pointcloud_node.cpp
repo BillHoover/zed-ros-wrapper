@@ -31,6 +31,8 @@ static int Width = 0;
 static int Height = 0;
 static int seq = 0;
 static sensor_msgs::ImageConstPtr Latest_depth_msg;
+static bool HaveDepth = false;
+static bool HaveInfo = false;
 
 void convert(const sensor_msgs::ImageConstPtr& depth_msg,
              const cv::Mat rgb_image,
@@ -97,12 +99,13 @@ void infoCb(const sensor_msgs::CameraInfoConstPtr info_msg)
   infoSub.shutdown();  
   // Update camera model
   model_.fromCameraInfo(info_msg);
+  HaveInfo = true;
 }
 
 void depthCb(const sensor_msgs::ImageConstPtr depth_msg)
 {
     // if this is the first time called, init some things
-    if (TotalPoints == 0) {
+    if (!HaveDepth) {
         if (depth_msg->encoding != enc::TYPE_16UC1) {
             ROS_ERROR("Incorrect depth encoding");
             abort();
@@ -110,6 +113,7 @@ void depthCb(const sensor_msgs::ImageConstPtr depth_msg)
         Width = depth_msg->width;
         Height = depth_msg->height;
         TotalPoints = Width * Height;
+        HaveDepth = true;
     }
 
     Latest_depth_msg = depth_msg;
@@ -144,7 +148,11 @@ int main(int argc, char** argv) {
     image_transport::Subscriber depthSub = it.subscribe("/zed/depth/depth_registered", 1, depthCb);
 
     pub = nh.advertise<PointCloud>("pointcloud", 1);
-    sleep(1);  // not the right way, want to make sure get info and depth
+    // we need to sleep until we have both the info and initial depth callbacks
+    while (!HaveInfo || !HaveDepth) {
+        sleep(1);
+        ros::spinOnce();
+    }
 
     ros::Subscriber rgbSub = 
         nh.subscribe<sensor_msgs::CompressedImageConstPtr>("/zed/rgb/image_rect_color/compressed", 1, rgbCb);
