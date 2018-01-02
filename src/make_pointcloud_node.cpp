@@ -33,7 +33,7 @@ static int seq = 0;
 static sensor_msgs::ImageConstPtr Latest_depth_msg;
 
 void convert(const sensor_msgs::ImageConstPtr& depth_msg,
-             const sensor_msgs::ImageConstPtr& rgb_msg,
+             const cv::Mat rgb_image,
              const PointCloud::Ptr& cloud_msg)
 {
   // Use correct principal point from calibration
@@ -53,8 +53,7 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg,
 
   const uint16_t* depth_row = reinterpret_cast<const uint16_t*>(&depth_msg->data[0]);
   int row_step = depth_msg->step / sizeof(uint16_t);
-  const uint8_t* rgb = &rgb_msg->data[0];
-  int rgb_skip = rgb_msg->step - rgb_msg->width * color_step;
+  const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud_msg, "x");
   sensor_msgs::PointCloud2Iterator<float> iter_y(*cloud_msg, "y");
@@ -64,7 +63,7 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg,
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(*cloud_msg, "b");
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud_msg, "a");
 
-  for (int v = 0; v < int(cloud_msg->height); ++v, depth_row += row_step, rgb += rgb_skip)
+  for (int v = 0; v < int(cloud_msg->height); ++v, depth_row += row_step)
   {
     for (int u = 0; u < int(cloud_msg->width); ++u, rgb += color_step, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
     {
@@ -102,7 +101,6 @@ void infoCb(const sensor_msgs::CameraInfoConstPtr info_msg)
 
 void depthCb(const sensor_msgs::ImageConstPtr depth_msg)
 {
-ROS_ERROR("Got depth");
     // if this is the first time called, init some things
     if (TotalPoints == 0) {
         if (depth_msg->encoding != enc::TYPE_16UC1) {
@@ -119,7 +117,6 @@ ROS_ERROR("Got depth");
 
 void rgbCb(const sensor_msgs::CompressedImageConstPtr rgb_msg)
 {
-ROS_ERROR("Got rgb");
     // Allocate new point cloud message
     PointCloud::Ptr Cloud_msg(new PointCloud);
     Cloud_msg->height = Latest_depth_msg->height;
@@ -127,10 +124,10 @@ ROS_ERROR("Got rgb");
     Cloud_msg->is_dense = false;
     Cloud_msg->is_bigendian = false;
 
-    cv::Mat image = cv::imdecode(cv::Mat(rgb_msg->data),1);//convert compressed image data to cv::Mat
+    cv::Mat rgb_image = cv::imdecode(cv::Mat(rgb_msg->data),1);//convert compressed image data to cv::Mat
     sensor_msgs::PointCloud2Modifier pcd_modifier(*Cloud_msg);
     pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
-    //convert(Latest_depth_msg, image, Cloud_msg);
+    convert(Latest_depth_msg, rgb_image, Cloud_msg);
     Cloud_msg->header.seq = seq++;
     Cloud_msg->header.stamp = rgb_msg->header.stamp;  // use rgb timestamp
     Cloud_msg->header.frame_id = "rodan_vr_frame";
@@ -146,7 +143,7 @@ int main(int argc, char** argv) {
         nh.subscribe<sensor_msgs::CameraInfoConstPtr>("/zed/depth/camera_info", 1, infoCb);
     image_transport::Subscriber depthSub = it.subscribe("/zed/depth/depth_registered", 1, depthCb);
 
-    pub = nh.advertise<pcl::PointCloud<pcl::PointXYZRGB> >("pointcloud", 1);
+    pub = nh.advertise<PointCloud>("pointcloud", 1);
     sleep(1);  // not the right way, want to make sure get info and depth
 
     ros::Subscriber rgbSub = 
