@@ -71,18 +71,10 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg,
     {
       uint16_t depth = depth_row[u];
 
-      // Check for invalid measurements
-      if (!depth_image_proc::DepthTraits<uint16_t>::valid(depth))
-      {
-        *iter_x = *iter_y = *iter_z = bad_point;
-      }
-      else
-      {
-        // Fill in XYZ
-        *iter_x = (u - center_x) * depth * constant_x;
-        *iter_y = (v - center_y) * depth * constant_y;
-        *iter_z = depth_image_proc::DepthTraits<uint16_t>::toMeters(depth);
-      }
+      // Fill in XYZ
+      *iter_x = (u - center_x) * depth * constant_x;
+      *iter_y = (v - center_y) * depth * constant_y;
+      *iter_z = depth_image_proc::DepthTraits<uint16_t>::toMeters(depth);
 
       // Fill in color
       *iter_a = 255;
