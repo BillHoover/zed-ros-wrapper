@@ -222,6 +222,14 @@ namespace zed_wrapper {
          */
         void publishDepth(cv::Mat depth, image_transport::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
             string encoding;
+            cv::MatIterator_<float> it = depth.begin<float>(), it_end = depth.end<float>();
+            for(; it != it_end; ++it) {
+                if (isinff(*it)) {
+                    if (*it < 0.0) *it = .3;
+                    else  *it = 5.0;
+                }
+            }
+
             if (openniDepthMode) {
                 depth *= 1000.0f;
                 depth.convertTo(depth, CV_16UC1); // in mm, rounded
@@ -733,6 +741,8 @@ namespace zed_wrapper {
             // Try to initialize the ZED
             param.camera_fps = rate;
             param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
+            param.camera_buffer_count_linux = 1;  // to cut latency
+
             param.camera_linux_id = zed_id;
 
             param.coordinate_units = sl::UNIT_METER;
