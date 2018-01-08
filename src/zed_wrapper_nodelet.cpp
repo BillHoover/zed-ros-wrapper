@@ -64,6 +64,7 @@
 
 #include <rodan_vr_api/SparseXYZRGB.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
+#include <rodan_vr_api/CompressedDepth.h>
 
 #define VERY_FAST 0
 #define HLOG 22
@@ -221,7 +222,6 @@ namespace zed_wrapper {
          * \param t : the ros::Time to stamp the depth image
          */
         void publishDepth(cv::Mat depth, image_transport::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
-            string encoding;
             cv::MatIterator_<float> it = depth.begin<float>(), it_end = depth.end<float>();
             for(; it != it_end; ++it) {
                 if (isinff(*it)) {
@@ -230,14 +230,15 @@ namespace zed_wrapper {
                 }
             }
 
-            if (openniDepthMode) {
-                depth *= 1000.0f;
-                depth.convertTo(depth, CV_16UC1); // in mm, rounded
-                encoding = sensor_msgs::image_encodings::TYPE_16UC1;
-            } else {
-                encoding = sensor_msgs::image_encodings::TYPE_32FC1;
-            }
-            pub_depth.publish(imageToROSmsg(depth, encoding, depth_frame_id, t));
+            depth *= 1000.0f;
+            depth.convertTo(depth, CV_16UC1); // in mm, rounded
+            // Now compress it
+            const unsigned int MaxCompressedSize =
+                LZF_MAX_COMPRESSED_SIZE(720*1280*sizeof(uint16_t));
+            char compressed[MaxCompressedSize];
+            unsigned int cs = lzf_compress (&depth.at<uint16_t>(0,0), 1280*720*sizeof(uint16_t),
+                                            &compressed[0], MaxCompressedSize);
+            //pub_depth.publish(imageToROSmsg(depth, encoding, depth_frame_id, t));
         }
 
         /* \brief Publish a pointCloud with a ros Publisher
@@ -739,6 +740,9 @@ namespace zed_wrapper {
             zed.reset(new sl::Camera());
 
             // Try to initialize the ZED
+            // without the memset, valgrind complained
+            memset(&param, 0, sizeof(param));
+
             param.camera_fps = rate;
             param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
             param.camera_buffer_count_linux = 1;  // to cut latency
