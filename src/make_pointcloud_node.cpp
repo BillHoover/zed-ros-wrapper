@@ -18,6 +18,7 @@
 #include <depth_image_proc/depth_traits.h>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/imgcodecs.hpp>
+#include <rodan_vr_api/CompressedDepth.h>
 
 namespace enc = sensor_msgs::image_encodings;
 
