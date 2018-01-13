@@ -69,7 +69,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
         <param name="right_raw_topic"       value="right/image_raw_color" />
         <param name="right_cam_info_topic"  value="right/camera_info" />
 
-        <param name="depth_topic"           value="depth/depth_registered" />
+        <param name="depth_topic"           value="depth/compressed_depth_svrt" />
         <param name="depth_cam_info_topic"  value="depth/camera_info" />
 
         <param name="point_cloud_topic"     value="point_cloud/compressed" />
