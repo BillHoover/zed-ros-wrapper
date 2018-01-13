@@ -104,6 +104,9 @@ namespace zed_wrapper {
         int zed_id;
         int depth_stabilization;
 
+        rodan_vr_api::CompressedDepth CompressedDepth;
+        ros::Time LastDepthPublishTime = ros::Time(0);
+
         // zed object
         sl::InitParameters param;
         std::unique_ptr<sl::Camera> zed;
@@ -222,29 +225,42 @@ namespace zed_wrapper {
          * \param t : the ros::Time to stamp the depth image
          */
         void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
-            static rodan_vr_api::CompressedDepth CompressedDepth;
+            // Only generate depth info at 1 Hz
+            if ((ros::Time::now() - LastDepthPublishTime) < ros::Duration(1.0)) return;
+
+            uint16_t skrunchedDepth[1280*720/2];
             cv::MatIterator_<float> it = depth.begin<float>(), it_end = depth.end<float>();
             // clamp the depth value between .3m and 5m
+            // and halve the horiz resolution
+            int sk = 0;
+            bool emit = false;
             for(; it != it_end; ++it) {
                 if (isinff(*it)) {
                     if (*it < 0.0) *it = .3;
                     else  *it = 5.0;
                 }
+                if (isnanf(*it)) *it = 0.0;
+                *it *= 1000.0f;  // convert to mm
+                if (emit) {
+                    emit = false;
+                    skrunchedDepth[sk++] = (uint16_t)((*it + *(it-1))/2.0 + 0.5);
+                } else {
+                    emit = true;
+                }
             }
-
-            depth *= 1000.0f;  // convert to mm
-            depth.convertTo(depth, CV_16UC1); // in mm, rounded
 
             // Now compress it
             const unsigned int MaxCompressedSize =
-                LZF_MAX_COMPRESSED_SIZE(720*1280*sizeof(uint16_t));
+                LZF_MAX_COMPRESSED_SIZE(720*1280*sizeof(uint16_t)/2);
             CompressedDepth.data.resize(MaxCompressedSize);  // first make sure we could store max size
-            unsigned int cs = lzf_compress (&depth.at<uint16_t>(0,0), 1280*720*sizeof(uint16_t),
+            unsigned int cs = lzf_compress (skrunchedDepth, 1280*720*sizeof(uint16_t)/2,
                                             &CompressedDepth.data[0], MaxCompressedSize);
+ROS_ERROR("Suzes %u %u", sizeof(skrunchedDepth), cs);
             CompressedDepth.data.resize(cs);  // set it to proper compressed size
             CompressedDepth.width = 1280;
             CompressedDepth.height = 720;
             CompressedDepth.delta = false;
+            LastDepthPublishTime = ros::Time::now();
             pub_depth.publish(CompressedDepth);
         }
 
