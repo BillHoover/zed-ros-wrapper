@@ -2,9 +2,10 @@
 //    Once we have them, we can unsubcribe to it as it won't change
 // Subscribe to the compressed depth image and in the callback store a depth map
 // Subscribe to the compressed rgb image and in the callback generate a 
-//    pointcloud using the rgb image + the latest depth map, then publish is
+//    pointcloud using the rgb image + the latest depth map, then publish it
 //
 // Assumes rgb iss BGR8 while depth is 16UC1
+// Things are done in simpler ways as needs to be duplicated in C# Unity code
 
 #include <cstdio>
 #include <ros/ros.h>
@@ -15,7 +16,6 @@
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <image_geometry/pinhole_camera_model.h>
-#include <depth_image_proc/depth_traits.h>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/imgcodecs.hpp>
 #include <rodan_vr_api/CompressedDepth.h>
@@ -31,11 +31,11 @@ static int TotalPoints = 0;
 static int Width = 0;
 static int Height = 0;
 static int seq = 0;
-static sensor_msgs::ImageConstPtr Latest_depth_msg;
+static rodan_vr_api::CompressedDepth Latest_depth_msg;
 static bool HaveDepth = false;
 static bool HaveInfo = false;
 
-void convert(const sensor_msgs::ImageConstPtr& depth_msg,
+void convert(const rodan_vr_api::CompressedDepth& depth_msg,
              const cv::Mat rgb_image,
              const PointCloud::Ptr& cloud_msg)
 {
@@ -44,7 +44,7 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg,
   float center_y = model_.cy();
 
   // Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
-  double unit_scaling = depth_image_proc::DepthTraits<uint16_t>::toMeters( uint16_t(1) );
+  double unit_scaling = .001;  //convert mm to m
   float constant_x = unit_scaling / model_.fx();
   float constant_y = unit_scaling / model_.fy();
   float bad_point = std::numeric_limits<float>::quiet_NaN ();
@@ -54,8 +54,8 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg,
   const int blue_offset  = 0;
   const int color_step   = 3;
 
-  const uint16_t* depth_row = reinterpret_cast<const uint16_t*>(&depth_msg->data[0]);
-  int row_step = depth_msg->step / sizeof(uint16_t);
+  const uint16_t* depth_row = reinterpret_cast<const uint16_t*>(&depth_msg.data[0]);
+  int row_step = depth_msg.step / sizeof(uint16_t);
   const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud_msg, "x");
@@ -75,7 +75,7 @@ void convert(const sensor_msgs::ImageConstPtr& depth_msg,
       // Fill in XYZ
       *iter_x = (u - center_x) * depth * constant_x;
       *iter_y = (v - center_y) * depth * constant_y;
-      *iter_z = depth_image_proc::DepthTraits<uint16_t>::toMeters(depth);
+      *iter_z = depth * .001;  // convert to meters
 
       // Fill in color
       *iter_a = 255;
@@ -95,16 +95,12 @@ void infoCb(const sensor_msgs::CameraInfoConstPtr info_msg)
   HaveInfo = true;
 }
 
-void depthCb(const sensor_msgs::ImageConstPtr depth_msg)
+void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
 {
     // if this is the first time called, init some things
     if (!HaveDepth) {
-        if (depth_msg->encoding != enc::TYPE_16UC1) {
-            ROS_ERROR("Incorrect depth encoding");
-            abort();
-        }
-        Width = depth_msg->width;
-        Height = depth_msg->height;
+        Width = depth_msg.width;
+        Height = depth_msg.height;
         TotalPoints = Width * Height;
         HaveDepth = true;
     }
@@ -116,8 +112,8 @@ void rgbCb(const sensor_msgs::CompressedImageConstPtr rgb_msg)
 {
     // Allocate new point cloud message
     PointCloud::Ptr Cloud_msg(new PointCloud);
-    Cloud_msg->height = Latest_depth_msg->height;
-    Cloud_msg->width  = Latest_depth_msg->width;
+    Cloud_msg->height = Latest_depth_msg.height;
+    Cloud_msg->width  = Latest_depth_msg.width;
     Cloud_msg->is_dense = false;
     Cloud_msg->is_bigendian = false;
 
@@ -138,7 +134,7 @@ int main(int argc, char** argv) {
     
     infoSub = 
         nh.subscribe<sensor_msgs::CameraInfoConstPtr>("/zed/depth/camera_info", 1, infoCb);
-    image_transport::Subscriber depthSub = it.subscribe("/zed/depth/depth_registered", 1, depthCb);
+    ros::Subscriber depthSub = nh.subscribe<rodan_vr_api::CompressedDepth>("/zed/depth/compressed_depth_svrt", 1, depthCb);
 
     pub = nh.advertise<PointCloud>("pointcloud", 1);
     // we need to sleep until we have both the info and initial depth callbacks
