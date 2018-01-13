@@ -35,6 +35,11 @@
 #include <memory>
 #include <sys/stat.h>
 
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/calib3d/calib3d.hpp>
+
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 #include <sensor_msgs/Image.h>
@@ -51,11 +56,6 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <tf2/LinearMath/Vector3.h>
-
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/calib3d/calib3d.hpp>
 
 #include <boost/make_shared.hpp>
 #include <boost/thread.hpp>
@@ -84,7 +84,7 @@ namespace zed_wrapper {
         image_transport::Publisher pub_raw_left;
         image_transport::Publisher pub_right;
         image_transport::Publisher pub_raw_right;
-        image_transport::Publisher pub_depth;
+        ros::Publisher pub_depth;
         ros::Publisher pub_cloud;
         ros::Publisher pub_rgb_cam_info;
         ros::Publisher pub_left_cam_info;
@@ -221,8 +221,10 @@ namespace zed_wrapper {
          * \param depth_frame_id : the id of the reference frame of the depth image
          * \param t : the ros::Time to stamp the depth image
          */
-        void publishDepth(cv::Mat depth, image_transport::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
+        void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
+            static rodan_vr_api::CompressedDepth CompressedDepth;
             cv::MatIterator_<float> it = depth.begin<float>(), it_end = depth.end<float>();
+            // clamp the depth value between .3m and 5m
             for(; it != it_end; ++it) {
                 if (isinff(*it)) {
                     if (*it < 0.0) *it = .3;
@@ -230,15 +232,20 @@ namespace zed_wrapper {
                 }
             }
 
-            depth *= 1000.0f;
+            depth *= 1000.0f;  // convert to mm
             depth.convertTo(depth, CV_16UC1); // in mm, rounded
+
             // Now compress it
             const unsigned int MaxCompressedSize =
                 LZF_MAX_COMPRESSED_SIZE(720*1280*sizeof(uint16_t));
-            char compressed[MaxCompressedSize];
+            CompressedDepth.data.resize(MaxCompressedSize);  // first make sure we could store max size
             unsigned int cs = lzf_compress (&depth.at<uint16_t>(0,0), 1280*720*sizeof(uint16_t),
-                                            &compressed[0], MaxCompressedSize);
-            //pub_depth.publish(imageToROSmsg(depth, encoding, depth_frame_id, t));
+                                            &CompressedDepth.data[0], MaxCompressedSize);
+            CompressedDepth.data.resize(cs);  // set it to proper compressed size
+            CompressedDepth.width = 1280;
+            CompressedDepth.height = 720;
+            CompressedDepth.delta = false;
+            pub_depth.publish(CompressedDepth);
         }
 
         /* \brief Publish a pointCloud with a ros Publisher
@@ -822,7 +829,7 @@ namespace zed_wrapper {
             NODELET_INFO_STREAM("Advertized on topic " << right_topic);
             pub_raw_right = it_zed.advertise(right_raw_topic, 1); //right raw
             NODELET_INFO_STREAM("Advertized on topic " << right_raw_topic);
-            pub_depth = it_zed.advertise(depth_topic, 1); //depth
+            pub_depth = nh.advertise<rodan_vr_api::CompressedDepth>(depth_topic, 1); //depth
             NODELET_INFO_STREAM("Advertized on topic " << depth_topic);
 
             //CompressedSparsePointCloud publisher
