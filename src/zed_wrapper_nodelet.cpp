@@ -218,6 +218,16 @@ namespace zed_wrapper {
             pub_img.publish(imageToROSmsg(img, sensor_msgs::image_encodings::BGR8, img_frame_id, t));
         }
 
+        static uint16_t dv(float v) {
+            // clamp the depth value between .3m and 5m
+            if (isinff(v)) {
+                if (v < 0.0) v = .3;
+                else  v = 5.0;
+            }
+            if (isnanf(v)) v = 0.0;
+            return (uint16_t)(v * 1000.0f + .5f);
+        }
+
         /* \brief Publish a cv::Mat depth image with a ros Publisher
          * \param depth : the depth image to publish
          * \param pub_depth : the publisher object to use
@@ -228,34 +238,27 @@ namespace zed_wrapper {
             // Only generate depth info at 1 Hz
             if ((ros::Time::now() - LastDepthPublishTime) < ros::Duration(1.0)) return;
 
-            uint16_t skrunchedDepth[1280*720/2];
-            cv::MatIterator_<float> it = depth.begin<float>(), it_end = depth.end<float>();
-            // clamp the depth value between .3m and 5m
-            // and halve the horiz resolution
-            int sk = 0;
-            bool emit = false;
-            for(; it != it_end; ++it) {
-                if (isinff(*it)) {
-                    if (*it < 0.0) *it = .3;
-                    else  *it = 5.0;
-                }
-                if (isnanf(*it)) *it = 0.0;
-                *it *= 1000.0f;  // convert to mm
-                if (emit) {
-                    emit = false;
-                    skrunchedDepth[sk++] = (uint16_t)((*it + *(it-1))/2.0 + 0.5);
+            uint16_t skrunchedDepth[640][360];
+            for (int col = 0; col < 640; col++) {
+            for (int row = 0; row < 350; row++) {
+                // average 4 pixels, except if any 0, make it zero
+                uint16_t dv00 = dv(depth.at<float>(row*2, col*2));
+                uint16_t dv10 = dv(depth.at<float>(row*2+1, col*2));
+                uint16_t dv01 = dv(depth.at<float>(row*2, col*2+1));
+                uint16_t dv11 = dv(depth.at<float>(row*2+1, col*2+1));
+                if ((dv00==0) || (dv10==0) || (dv01==0) || (dv11==0)) {
+                    skrunchedDepth[col][row] = 0;
                 } else {
-                    emit = true;
+                    skrunchedDepth[col][row] = (dv00+dv10+dv01+dv11+2)/4;
                 }
-            }
+            }}
 
             // Now compress it
             const unsigned int MaxCompressedSize =
-                LZF_MAX_COMPRESSED_SIZE(720*1280*sizeof(uint16_t)/2);
+                LZF_MAX_COMPRESSED_SIZE(sizeof(skrunchedDepth));
             CompressedDepth.data.resize(MaxCompressedSize);  // first make sure we could store max size
-            unsigned int cs = lzf_compress (skrunchedDepth, 1280*720*sizeof(uint16_t)/2,
+            unsigned int cs = lzf_compress (skrunchedDepth, sizeof(skrunchedDepth),
                                             &CompressedDepth.data[0], MaxCompressedSize);
-ROS_ERROR("Suzes %u %u", sizeof(skrunchedDepth), cs);
             CompressedDepth.data.resize(cs);  // set it to proper compressed size
             CompressedDepth.width = 1280;
             CompressedDepth.height = 720;
