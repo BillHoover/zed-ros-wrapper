@@ -20,10 +20,11 @@
 
 
 
-
 /****************************************************************************************************
  ** This sample is a wrapper for the ZED library in order to use the ZED Camera with ROS.          **
  ** A set of parameters can be specified in the launch file.                                       **
+ ** Modified for SVRT use, several things with depth maps and pointclouds
+ ** changed to be various hard-coded options
  ****************************************************************************************************/
 
 #include <csignal>
@@ -66,6 +67,7 @@
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
 #include <rodan_vr_api/CompressedDepth.h>
 
+// parameters for the special LZ compression
 #define VERY_FAST 0
 #define HLOG 22
 #include "lzf.h"
@@ -123,12 +125,14 @@ namespace zed_wrapper {
 
         bool computeDepth;
         bool grabbing = false;
-        int openniDepthMode = 0; // 16 bit UC data in mm else 32F in m, for more info http://www.ros.org/reps/rep-0118.html
+        int openniDepthMode = 1; // 16 bit UC data in mm else 32F in m, for more info http://www.ros.org/reps/rep-0118.html
 
         // Point cloud variables
         sl::Mat cloud;
         string point_cloud_frame_id = "";
         ros::Time point_cloud_time;
+        // Transform from zed_initial_frame to rodan_vr_frame
+        tf2::Transform camera_to_vr;  // will always have the latest valid one
 
         string depth_frame_id = "";
         string camera_frame_id = "";
@@ -218,8 +222,8 @@ namespace zed_wrapper {
             pub_img.publish(imageToROSmsg(img, sensor_msgs::image_encodings::BGR8, img_frame_id, t));
         }
 
+        // clamp the depth value between .3m and 5m and convert to uint16 mm
         static uint16_t dv(float v) {
-            // clamp the depth value between .3m and 5m
             if (isinff(v)) {
                 if (v < 0.0) v = .3;
                 else  v = 5.0;
@@ -236,16 +240,18 @@ namespace zed_wrapper {
          */
         void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
             // Only generate depth info at 1 Hz
-            if ((ros::Time::now() - LastDepthPublishTime) < ros::Duration(1.0)) return;
+            if ((ros::Time::now() - 
+                 LastDepthPublishTime) < ros::Duration(1.0)) return;
 
             uint16_t skrunchedDepth[640][360];
             for (int col = 0; col < 640; col++) {
-            for (int row = 0; row < 350; row++) {
+            for (int row = 0; row < 360; row++) {
                 // average 4 pixels, except if any 0, make it zero
                 uint16_t dv00 = dv(depth.at<float>(row*2, col*2));
                 uint16_t dv10 = dv(depth.at<float>(row*2+1, col*2));
                 uint16_t dv01 = dv(depth.at<float>(row*2, col*2+1));
                 uint16_t dv11 = dv(depth.at<float>(row*2+1, col*2+1));
+                // if any of the 4 were invalid, result is invalid
                 if ((dv00==0) || (dv10==0) || (dv01==0) || (dv11==0)) {
                     skrunchedDepth[col][row] = 0;
                 } else {
@@ -347,19 +353,14 @@ namespace zed_wrapper {
             Updates.clear();  // No deltas yet
 
             // Transform from zed_initial_frame to rodan_vr_frame
-            tf2::Transform camera_to_vr;
+            // was initialized to identity in case we don't get a transform
+            // if for some reason TF fails, will use the last valid one
             try {
-                geometry_msgs::TransformStamped c2v = tfBuffer->lookupTransform("rodan_vr_frame", "zed_initial_frame", point_cloud_time);
+                geometry_msgs::TransformStamped c2v = 
+                    tfBuffer->lookupTransform("rodan_vr_frame", "zed_initial_frame", 
+                                              ros::Time(0)); // use zero for latest tf
                 tf2::fromMsg(c2v.transform, camera_to_vr);
-
-            } catch (tf2::TransformException &ex) {
-              ROS_WARN_THROTTLE(10.0, "The tf from '%s' to '%s' does not seem to be available, "
-                                      "will assume it as identity!",
-                                      "zed_initial_frame",
-                                      "rodan_vr_frame");
-              ROS_DEBUG("Transform error: %s", ex.what());
-              camera_to_vr.setIdentity();
-            }
+            } catch (...) {}  // ugly, but really just want to leave the latest transform on error
 
             // get the data from ZED
             sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
@@ -740,6 +741,7 @@ namespace zed_wrapper {
 
             string point_cloud_topic = "point_cloud/cloud_registered";
             cloud_frame_id = camera_frame_id;
+            camera_to_vr.setIdentity();  // set transform to identity till we get a valid tf
 
             nh_ns.getParam("rgb_topic", rgb_topic);
             nh_ns.getParam("rgb_raw_topic", rgb_raw_topic);
