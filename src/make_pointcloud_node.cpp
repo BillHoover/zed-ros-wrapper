@@ -66,7 +66,7 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud_msg, "a");
 
   // have a compressed depth_msg, first decompress to get the depth data
-  uint16_t skrunchedDepth[640][360];
+  uint16_t skrunchedDepth[1280][720];
   unsigned int ucs = lzf_decompress(&depth_msg.data[0], depth_msg.data.size(),
                                     skrunchedDepth, sizeof(skrunchedDepth));
 
@@ -74,8 +74,7 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   {
     for (int u = 0; u < int(cloud_msg->width); ++u, rgb += color_step, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
     {
-      // depth data is half res
-      uint16_t depth = skrunchedDepth[u/2][v/2];
+      uint16_t depth = skrunchedDepth[u][v];
 
       // Fill in XYZ
       *iter_x = (u - center_x) * depth * constant_x;

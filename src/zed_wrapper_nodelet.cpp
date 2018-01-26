@@ -243,20 +243,10 @@ namespace zed_wrapper {
             if ((ros::Time::now() - 
                  LastDepthPublishTime) < ros::Duration(1.0)) return;
 
-            uint16_t skrunchedDepth[640][360];
-            for (int col = 0; col < 640; col++) {
-            for (int row = 0; row < 360; row++) {
-                // average 4 pixels, except if any 0, make it zero
-                uint16_t dv00 = dv(depth.at<float>(row*2, col*2));
-                uint16_t dv10 = dv(depth.at<float>(row*2+1, col*2));
-                uint16_t dv01 = dv(depth.at<float>(row*2, col*2+1));
-                uint16_t dv11 = dv(depth.at<float>(row*2+1, col*2+1));
-                // if any of the 4 were invalid, result is invalid
-                if ((dv00==0) || (dv10==0) || (dv01==0) || (dv11==0)) {
-                    skrunchedDepth[col][row] = 0;
-                } else {
-                    skrunchedDepth[col][row] = (dv00+dv10+dv01+dv11+2)/4;
-                }
+            uint16_t skrunchedDepth[1280][720];
+            for (int col = 0; col < 1280; col++) {
+            for (int row = 0; row < 720; row++) {
+                skrunchedDepth[col][row] = dv(depth.at<float>(row, col));
             }}
 
             // Now compress it
