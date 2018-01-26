@@ -129,7 +129,7 @@ add_dependencies(zed_wrapper_node ${PROJECT_NAME}_gencfg)
 add_executable(sparse_pointcloud_node src/sparse_pointcloud_node.cpp src/lzf_d.cpp)
 target_link_libraries(sparse_pointcloud_node ${LINK_LIBRARIES})
 
-add_executable(make_pointcloud_node src/make_pointcloud_node.cpp)
+add_executable(make_pointcloud_node src/make_pointcloud_node.cpp src/lzf_d.cpp)
 target_link_libraries(make_pointcloud_node ${LINK_LIBRARIES})
 
 ###############################################################################

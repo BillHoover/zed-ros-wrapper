@@ -19,6 +19,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/imgcodecs.hpp>
 #include <rodan_vr_api/CompressedDepth.h>
+#include "lzf.h"
 
 namespace enc = sensor_msgs::image_encodings;
 
@@ -54,8 +55,6 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   const int blue_offset  = 0;
   const int color_step   = 3;
 
-  const uint16_t* depth_row = reinterpret_cast<const uint16_t*>(&depth_msg.data[0]);
-  int row_step = depth_msg.step / sizeof(uint16_t);
   const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(*cloud_msg, "x");
@@ -66,11 +65,17 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(*cloud_msg, "b");
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud_msg, "a");
 
-  for (int v = 0; v < int(cloud_msg->height); ++v, depth_row += row_step)
+  // have a compressed depth_msg, first decompress to get the depth data
+  uint16_t skrunchedDepth[640][360];
+  unsigned int ucs = lzf_decompress(&depth_msg.data[0], depth_msg.data.size(),
+                                    skrunchedDepth, sizeof(skrunchedDepth));
+
+  for (int v = 0; v < int(cloud_msg->height); ++v)
   {
     for (int u = 0; u < int(cloud_msg->width); ++u, rgb += color_step, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
     {
-      uint16_t depth = depth_row[u];
+      // depth data is half res
+      uint16_t depth = skrunchedDepth[u/2][v/2];
 
       // Fill in XYZ
       *iter_x = (u - center_x) * depth * constant_x;
