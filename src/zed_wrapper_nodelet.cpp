@@ -108,6 +108,7 @@ namespace zed_wrapper {
 
         rodan_vr_api::CompressedDepth CompressedDepth;
         ros::Time LastDepthPublishTime = ros::Time(0);
+        uint16_t skrunchedDepth[1280][720];
 
         // zed object
         sl::InitParameters param;
@@ -239,11 +240,7 @@ namespace zed_wrapper {
          * \param t : the ros::Time to stamp the depth image
          */
         void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
-            // Only generate depth info at 1 Hz
-            if ((ros::Time::now() - 
-                 LastDepthPublishTime) < ros::Duration(1.0)) return;
 
-            uint16_t skrunchedDepth[1280][720];
             for (int col = 0; col < 1280; col++) {
             for (int row = 0; row < 720; row++) {
                 skrunchedDepth[col][row] = dv(depth.at<float>(row, col));
