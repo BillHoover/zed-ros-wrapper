@@ -61,7 +61,7 @@
 #include <boost/make_shared.hpp>
 #include <boost/thread.hpp>
 
-#include <sl/Camera.hpp>
+#include <sl_zed/Camera.hpp>
 
 #include <rodan_vr_api/SparseXYZRGB.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
@@ -593,7 +593,7 @@ namespace zed_wrapper {
                             sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
                             while (err != sl::SUCCESS) {
                                 err = zed->open(param); // Try to initialize the ZED
-                                NODELET_INFO_STREAM(errorCode2str(err));
+                                NODELET_INFO_STREAM(toString(err));
                                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
                             }
                         }
@@ -758,8 +758,6 @@ namespace zed_wrapper {
             zed.reset(new sl::Camera());
 
             // Try to initialize the ZED
-            // without the memset, valgrind complained
-            memset(&param, 0, sizeof(param));
 
             param.camera_fps = rate;
             param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
@@ -769,7 +767,7 @@ namespace zed_wrapper {
 
             param.coordinate_units = sl::UNIT_METER;
             param.coordinate_system = sl::COORDINATE_SYSTEM_IMAGE;
-            param.depth_mode = static_cast<sl::DEPTH_MODE> (quality);
+            param.depth_mode = sl::DEPTH_MODE_ULTRA;
             param.sdk_verbose = true;
             param.sdk_gpu_id = gpu_id;
             param.depth_stabilization = depth_stabilization;
@@ -781,7 +779,7 @@ namespace zed_wrapper {
             sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
             while (err != sl::SUCCESS) {
                 err = zed->open(param);
-                NODELET_INFO_STREAM(errorCode2str(err));
+                NODELET_INFO_STREAM(toString(err));
                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
             }
 
