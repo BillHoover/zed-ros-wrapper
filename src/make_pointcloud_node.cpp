@@ -37,7 +37,7 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
              const PointCloud::Ptr& cloud_msg)
 {
   // Use correct principal point from calibration
-  float center_x = depth_mag.cx;
+  float center_x = depth_msg.cx;
   float center_y = depth_msg.cy;
 
   // Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)

@@ -255,6 +255,7 @@ namespace zed_wrapper {
             CompressedDepth.data.resize(cs);  // set it to proper compressed size
             CompressedDepth.width = 1280;
             CompressedDepth.height = 720;
+            sl::CameraInformation zedParam = zed->getCameraInformation();
             CompressedDepth.fx = zedParam.calibration_parameters.left_cam.fx;
             CompressedDepth.fy = zedParam.calibration_parameters.left_cam.fy;
             CompressedDepth.cx = zedParam.calibration_parameters.left_cam.cx;
