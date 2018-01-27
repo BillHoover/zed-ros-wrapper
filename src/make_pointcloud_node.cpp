@@ -15,7 +15,6 @@
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <image_geometry/pinhole_camera_model.h>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/imgcodecs.hpp>
 #include <rodan_vr_api/CompressedDepth.h>
@@ -25,30 +24,26 @@ namespace enc = sensor_msgs::image_encodings;
 
 typedef sensor_msgs::PointCloud2 PointCloud;
 ros::Publisher pub_point_cloud_;
-image_geometry::PinholeCameraModel model_;
 static ros::Publisher pub;
-static ros::Subscriber infoSub;
 static int TotalPoints = 0;
 static int Width = 0;
 static int Height = 0;
 static int seq = 0;
 static rodan_vr_api::CompressedDepth Latest_depth_msg;
 static bool HaveDepth = false;
-static bool HaveInfo = false;
 
 void convert(const rodan_vr_api::CompressedDepth& depth_msg,
              const cv::Mat rgb_image,
              const PointCloud::Ptr& cloud_msg)
 {
   // Use correct principal point from calibration
-  float center_x = model_.cx();
-  float center_y = model_.cy();
+  float center_x = depth_mag.cx;
+  float center_y = depth_msg.cy;
 
   // Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
   double unit_scaling = .001;  //convert mm to m
-  float constant_x = unit_scaling / model_.fx();
-  float constant_y = unit_scaling / model_.fy();
-  float bad_point = std::numeric_limits<float>::quiet_NaN ();
+  float constant_x = unit_scaling / depth_msg.fx;
+  float constant_y = unit_scaling / depth_msg.fy;
   
   const int red_offset   = 2;
   const int green_offset = 1;
@@ -76,27 +71,20 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
     {
       uint16_t depth = skrunchedDepth[u][v];
 
-      // Fill in XYZ
-      *iter_x = (u - center_x) * depth * constant_x;
-      *iter_y = (v - center_y) * depth * constant_y;
-      *iter_z = depth * .001;  // convert to meters
+      if (depth > 0) {   // don't generate pointcloud point for invalid
+        // Fill in XYZ
+        *iter_x = (u - center_x) * depth * constant_x;
+        *iter_y = (v - center_y) * depth * constant_y;
+        *iter_z = depth * .001;  // convert to meters
 
-      // Fill in color
-      *iter_a = 255;
-      *iter_r = rgb[red_offset];
-      *iter_g = rgb[green_offset];
-      *iter_b = rgb[blue_offset];
+        // Fill in color
+        *iter_a = 255;
+        *iter_r = rgb[red_offset];
+        *iter_g = rgb[green_offset];
+        *iter_b = rgb[blue_offset];
+      }
     }
   }
-}
-
-void infoCb(const sensor_msgs::CameraInfoConstPtr info_msg)
-{
-  // unsubscribe since the parameters won't change
-  infoSub.shutdown();  
-  // Update camera model
-  model_.fromCameraInfo(info_msg);
-  HaveInfo = true;
 }
 
 void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
@@ -136,13 +124,11 @@ int main(int argc, char** argv) {
     ros::NodeHandle nh;
     image_transport::ImageTransport it(nh);
     
-    infoSub = 
-        nh.subscribe<sensor_msgs::CameraInfoConstPtr>("/zed/depth/camera_info", 1, infoCb);
     ros::Subscriber depthSub = nh.subscribe<rodan_vr_api::CompressedDepth>("/zed/depth/compressed_depth_svrt", 1, depthCb);
 
-    pub = nh.advertise<PointCloud>("pointcloud", 1);
-    // we need to sleep until we have both the info and initial depth callbacks
-    while (!HaveInfo || !HaveDepth) {
+    pub = nh.advertise<PointCloud>("/zed/pointcloud_svrt", 1);
+    // we need to sleep until we have the initial depth callback
+    while (!HaveDepth) {
         sleep(1);
         ros::spinOnce();
     }
