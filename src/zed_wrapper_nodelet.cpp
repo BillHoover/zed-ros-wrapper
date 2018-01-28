@@ -259,11 +259,37 @@ namespace zed_wrapper {
             CompressedDepth.data.resize(cs);  // set it to proper compressed size
             CompressedDepth.width = 1280;
             CompressedDepth.height = 720;
+
+            // add camera info so we don't need access in windows
             sl::CameraInformation zedParam = zed.getCameraInformation();
             CompressedDepth.fx = zedParam.calibration_parameters.left_cam.fx;
             CompressedDepth.fy = zedParam.calibration_parameters.left_cam.fy;
             CompressedDepth.cx = zedParam.calibration_parameters.left_cam.cx;
             CompressedDepth.cy = zedParam.calibration_parameters.left_cam.cy;
+
+            // add current transform to rodan_vr_frame so easy in windows
+            // Transform from zed_initial_frame to rodan_vr_frame
+            // was initialized to identity in case we don't get a transform
+            // if for some reason TF fails, will use the last valid one
+            try {
+                geometry_msgs::TransformStamped c2v = 
+                    tfBuffer->lookupTransform("rodan_vr_frame", "zed_initial_frame", 
+                                              ros::Time(0)); // use zero for latest tf
+                tf2::fromMsg(c2v.transform, camera_to_vr);
+            } catch (...) {}  // ugly, but really just want to leave the latest transform on error
+            CompressedDepth.originX = camera_to_vr.getOrigin()[0];
+            CompressedDepth.originY = camera_to_vr.getOrigin()[1];
+            CompressedDepth.originZ = camera_to_vr.getOrigin()[2];
+            CompressedDepth.basis00 = camera_to_vr.getBasis()[0][0];
+            CompressedDepth.basis01 = camera_to_vr.getBasis()[0][1];
+            CompressedDepth.basis02 = camera_to_vr.getBasis()[0][2];
+            CompressedDepth.basis10 = camera_to_vr.getBasis()[1][0];
+            CompressedDepth.basis11 = camera_to_vr.getBasis()[1][1];
+            CompressedDepth.basis12 = camera_to_vr.getBasis()[1][2];
+            CompressedDepth.basis20 = camera_to_vr.getBasis()[2][0];
+            CompressedDepth.basis21 = camera_to_vr.getBasis()[2][1];
+            CompressedDepth.basis22 = camera_to_vr.getBasis()[2][2];
+
             LastDepthPublishTime = ros::Time::now();
             pub_depth.publish(CompressedDepth);
         }
