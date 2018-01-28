@@ -19,7 +19,7 @@ function(checkPackage package customMessage)
     endif()
 endfunction(checkPackage)
 
-find_package(ZED 2.1)
+find_package(ZED 2.3)
 checkPackage("ZED" "ZED SDK not found, install it from:\n https://www.stereolabs.com/developers/")
 
 exec_program(uname ARGS -p OUTPUT_VARIABLE CMAKE_SYSTEM_NAME2)
