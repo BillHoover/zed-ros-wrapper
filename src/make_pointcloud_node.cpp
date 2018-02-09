@@ -1,10 +1,8 @@
-// Subscribe to the camera info to get the parameters for the Zed
-//    Once we have them, we can unsubcribe to it as it won't change
 // Subscribe to the compressed depth image and in the callback store a depth map
 // Subscribe to the compressed rgb image and in the callback generate a 
 //    pointcloud using the rgb image + the latest depth map, then publish it
 //
-// Assumes rgb iss BGR8 while depth is 16UC1
+// Assumes rgb is BGR8 while depth is 16UC1
 // Things are done in simpler ways as needs to be duplicated in C# Unity code
 
 #include <cstdio>
@@ -73,9 +71,21 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
 
       if (depth > 0) {   // don't generate pointcloud point for invalid
         // Fill in XYZ
-        *iter_x = (u - center_x) * depth * constant_x;
-        *iter_y = (v - center_y) * depth * constant_y;
-        *iter_z = depth * .001;  // convert to meters
+        // map from u,v,depth to x,y,z using camera info
+        float x = (u - center_x) * depth * constant_x;
+        float y = (v - center_y) * depth * constant_y;
+        float z = depth * .001;  // convert to meters
+
+        // now apply the transform from the camera to rodan_vr_frame
+        *iter_x = x * depth_msg.basis00 + 
+                  y * depth_msg.basis01 + 
+                  z * depth_msg.basis02 + depth_msg.originX;
+        *iter_y = x * depth_msg.basis10 + 
+                  y * depth_msg.basis11 + 
+                  z * depth_msg.basis12 + depth_msg.originY;
+        *iter_z = x * depth_msg.basis20 + 
+                  y * depth_msg.basis21 + 
+                  z * depth_msg.basis22 + depth_msg.originZ;
 
         // Fill in color
         *iter_a = 255;
