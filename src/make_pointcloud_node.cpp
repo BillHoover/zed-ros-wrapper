@@ -76,16 +76,21 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
         float y = (v - center_y) * depth * constant_y;
         float z = depth * .001;  // convert to meters
 
+        // need to reorder coords
+        float nx = z;
+        float ny = -x;
+        float nz = -y;
+
         // now apply the transform from the camera to rodan_vr_frame
-        *iter_x = x * depth_msg.basis00 + 
-                  y * depth_msg.basis01 + 
-                  z * depth_msg.basis02 + depth_msg.originX;
-        *iter_y = x * depth_msg.basis10 + 
-                  y * depth_msg.basis11 + 
-                  z * depth_msg.basis12 + depth_msg.originY;
-        *iter_z = x * depth_msg.basis20 + 
-                  y * depth_msg.basis21 + 
-                  z * depth_msg.basis22 + depth_msg.originZ;
+        *iter_x = nx * depth_msg.basis00 + 
+                  ny * depth_msg.basis01 + 
+                  nz * depth_msg.basis02 + depth_msg.originX;
+        *iter_y = nx * depth_msg.basis10 + 
+                  ny * depth_msg.basis11 + 
+                  nz * depth_msg.basis12 + depth_msg.originY;
+        *iter_z = nx * depth_msg.basis20 + 
+                  ny * depth_msg.basis21 + 
+                  nz * depth_msg.basis22 + depth_msg.originZ;
 
         // Fill in color
         *iter_a = 255;
