@@ -40,6 +40,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/core/cuda.hpp>
 
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
@@ -63,8 +64,6 @@
 
 #include <sl_zed/Camera.hpp>
 
-#include <rodan_vr_api/SparseXYZRGB.h>
-#include <rodan_vr_api/CompressedSparsePointCloud.h>
 #include <rodan_vr_api/CompressedDepth.h>
 
 // parameters for the special LZ compression
@@ -73,6 +72,7 @@
 #include "lzf.h"
 
 using namespace std;
+using namespace cv::cuda;
 
 namespace zed_wrapper {
 
@@ -87,7 +87,6 @@ namespace zed_wrapper {
         image_transport::Publisher pub_right;
         image_transport::Publisher pub_raw_right;
         ros::Publisher pub_depth;
-        ros::Publisher pub_cloud;
         ros::Publisher pub_rgb_cam_info;
         ros::Publisher pub_left_cam_info;
         ros::Publisher pub_right_cam_info;
@@ -116,29 +115,19 @@ namespace zed_wrapper {
 
         // flags
         int confidence = 100;
-        int sparsepointdistsq = 625;
-        int sparsecolordistsq = 625;
-        int sparsepointdistsqimmediate = 2500;
-        int sparsecolordistsqimmediate = 2500;
-        int updatepercent = 10;
-        int agelimit = 100;  // in frames
-        int reportevery = 150; // in frames
 
-        bool computeDepth;
+        bool computeDepth;  // whether to compute depth
+        bool computingDepth = false;  // whether we currently are computing depth
         bool grabbing = false;
-        int openniDepthMode = 1; // 16 bit UC data in mm else 32F in m, for more info http://www.ros.org/reps/rep-0118.html
+        // I want the following to be 0 for new depth compression
+        int openniDepthMode = 0; // 16 bit UC data in mm else 32F in m, for more info http://www.ros.org/reps/rep-0118.html
 
-        // Point cloud variables
-        sl::Mat cloud;
-        string point_cloud_frame_id = "";
-        ros::Time point_cloud_time;
         // Transform from zed_initial_frame to rodan_vr_frame
         tf2::Transform camera_to_vr;  // will always have the latest valid one
 
         string depth_frame_id = "";
         string camera_frame_id = "";
         string rgb_frame_id = "";
-        string cloud_frame_id = "";
         string right_frame_id = "";
         string left_frame_id = "";
 
@@ -294,162 +283,6 @@ namespace zed_wrapper {
             pub_depth.publish(CompressedDepth);
         }
 
-        /* \brief Publish a pointCloud with a ros Publisher
-         * \param width : the width of the point cloud
-         * \param height : the height of the point cloud
-         * \param pub_cloud : the publisher object to use
-         */
-        static int16_t zedToInt16(float v)
-        {
-            // take the ZED value (float meters) and return int16 mm
-            // limit values to +- 10000
-            // if -inf, +inf, or NaN, or outside range, return -11111
-            if (isnanf(v) || isinff(v)) {
-                return -11111;
-            }
-            v *= 1000.0f;
-            v += 0.5f;
-            if (v > 10000.0f)  v=-11111.0f;
-            if (v < -10000.0f) v=-11111.0f;
-            return static_cast<int16_t>(v);
-        }
-
-        static int dist3ds(int a1, int b1, int c1, int a2, int b2, int c2)
-        {
-            return (a1 - a2) * (a1 - a2) + (b1 - b2) * (b1 - b2) + (c1 - c2) * (c1 - c2);
-        }
-
-        void publishPointCloud(int width, int height, ros::Publisher &pub_cloud) {
-            static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
-            static std::vector<int32_t> BaselineLastUpdate; // frameNumber last updated
-            static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
-            static rodan_vr_api::SparseXYZRGB notvalid;
-            static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
-            static unsigned int MaxCompressedSize;
-            static int32_t TotalPoints = 0;
-            static int32_t frameNumber = 0;
-
-            // set up randon number generator
-            // Seed with a real random value, if available
-            static std::random_device r;
- 
-            static std::minstd_rand e1(r());
-            static std::uniform_int_distribution<int> uniform_dist(1, 100);
-
-            frameNumber++;
-            // total points is constant
-            // check each point and only update ones that are enough different
-            if (TotalPoints == 0) {
-                TotalPoints = width * height;
-
-                // reserve space for max for both vectors
-                Baseline.reserve(TotalPoints);
-                BaselineLastUpdate.reserve(TotalPoints);
-                Updates.reserve(TotalPoints);
-                MaxCompressedSize = LZF_MAX_COMPRESSED_SIZE(TotalPoints * sizeof(rodan_vr_api::SparseXYZRGB));
-                CompressedUpdates.totalpoints = TotalPoints;
-                CompressedUpdates.data.reserve(MaxCompressedSize);
-
-                // init the notvalid entry
-                notvalid.x = notvalid.y = notvalid.z = -11111;
-                notvalid.r = notvalid.g = notvalid.b = 0;
-                notvalid.index1 = notvalid.index2 = notvalid.index3 = 0;
-
-                // initialize the entire baseline vector to notvalid
-                for (int i = 0; i < TotalPoints; i++) {
-                    Baseline[i] = notvalid;
-                    BaselineLastUpdate[i] = 0;
-                }
-            }
-
-            // go through and invalidate any entries older than age limit
-            int lastValidFrame = frameNumber - agelimit;
-            for (int i = 0; i < TotalPoints; i++) {
-                if (BaselineLastUpdate[i] < lastValidFrame) {
-                    Baseline[i] = notvalid;
-                    BaselineLastUpdate[i] = 0;
-                }
-            }
-
-            Updates.clear();  // No deltas yet
-
-            // Transform from zed_initial_frame to rodan_vr_frame
-            // was initialized to identity in case we don't get a transform
-            // if for some reason TF fails, will use the last valid one
-            try {
-                geometry_msgs::TransformStamped c2v = 
-                    tfBuffer->lookupTransform("rodan_vr_frame", "zed_initial_frame", 
-                                              ros::Time(0)); // use zero for latest tf
-                tf2::fromMsg(c2v.transform, camera_to_vr);
-            } catch (...) {}  // ugly, but really just want to leave the latest transform on error
-
-            // get the data from ZED
-            sl::Vector4<float>* cpu_cloud = cloud.getPtr<sl::float4>();
-            for (int i = 0; i < TotalPoints; i++) {
-                tf2::Vector3 cameraPoint, vrPoint;
-                cameraPoint = tf2::Vector3(cpu_cloud[i][2],
-                                           -cpu_cloud[i][0],
-                                           -cpu_cloud[i][1]);
-                vrPoint = camera_to_vr * cameraPoint;
-                int16_t x = zedToInt16(vrPoint.x());
-                int16_t y = zedToInt16(vrPoint.y());
-                int16_t z = zedToInt16(vrPoint.z());
-                uint8_t* cp = (uint8_t*)&cpu_cloud[i][3];
-                uint8_t r = cp[2];
-                uint8_t g = cp[1];
-                uint8_t b = cp[0];
- 
-                // see if different from Baseline, if so update it
-                if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
-                    (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > sparsecolordistsq)) {
-                    // OK, it met the first delta criterion
-                    // now check if it is bad enough that we must, or the 
-                    // proper percentage
-                    // see if it is one of the ones we want based on percentage
-                    if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) <= sparsepointdistsqimmediate) &&
-                        (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) <= sparsecolordistsqimmediate) &&
-                        (uniform_dist(e1) > updatepercent)) continue; 
-
-                    // update baseline with the new values
-                    Baseline[i].x = x;
-                    Baseline[i].y = y;
-                    Baseline[i].z = z;
-                    Baseline[i].r = r;
-                    Baseline[i].g = g;
-                    Baseline[i].b = b;
-                    uint8_t* pp = (uint8_t*)&i;
-                    Baseline[i].index1 = pp[0];
-                    Baseline[i].index2 = pp[1];
-                    Baseline[i].index3 = pp[2];
-                    // and add the point to the sparse array
-                    Updates.push_back(Baseline[i]);
-                    BaselineLastUpdate[i] = frameNumber;
-                }
-            }
-           
-            // compress it
-            CompressedUpdates.data.resize(MaxCompressedSize);  // first make sure we could store max size
-            unsigned int cs = lzf_compress (&Updates[0], Updates.size() * sizeof(Updates[0]),
-                                            &CompressedUpdates.data[0], MaxCompressedSize);
-            CompressedUpdates.data.resize(cs);  // set it to proper compressed size
-            pub_cloud.publish(CompressedUpdates);
-            float r1 = 32. / 12.;
-            float r2 = (double)TotalPoints / (double) Updates.size();
-            float r3 = ((double)Updates.size() * sizeof(Updates[0])) / 
-                       ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
-            float r4 = ((double)TotalPoints * 32.) / 
-                       ((double)CompressedUpdates.data.size() * sizeof(CompressedUpdates.data[0]));
-            float dataRate = (double)CompressedUpdates.data.size() * 
-                             sizeof(CompressedUpdates.data[0]) * 8.0 * rate /
-                             (1000.0 * 1000.0); // rate in Mbps needed
-            if ((frameNumber % reportevery) == 0) { 
-                NODELET_INFO_STREAM(std::setprecision(2) << std::fixed << 
-                    "Frame: " << frameNumber << 
-                    ", Ratios: " << r1 << ", " << r2 << 
-                    ", " << r3 << ", " << r4 << 
-                    ", " << dataRate << "Mbps");
-            }
-        }
 
         /* \brief Publish the informations of a camera with a ros Publisher
          * \param cam_info_msg : the information message to publish
@@ -533,27 +366,11 @@ namespace zed_wrapper {
 
        void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
             NODELET_INFO("Reconfigure: confidence %d", config.confidence);
-            NODELET_INFO("Reconfigure: Dist between points %d", config.sparsepointdist);
-            NODELET_INFO("Reconfigure: Dist between colors %d", config.sparsecolordist);
-            NODELET_INFO("Reconfigure: Dist between points immediate %d", config.sparsepointdistimmediate);
-            NODELET_INFO("Reconfigure: Dist between colors immediate %d", config.sparsecolordistimmediate);
-            NODELET_INFO("Reconfigure: Percentage to update each frame %d", config.updatepercent);
-            NODELET_INFO("Reconfigure: Age limit in frames %d", config.agelimit);
-            NODELET_INFO("Reconfigure: Report every n frames %d", config.reportevery);
             confidence = config.confidence;
-            sparsepointdistsq = config.sparsepointdist * config.sparsepointdist;
-            sparsecolordistsq = config.sparsecolordist * config.sparsecolordist;
-            sparsepointdistsqimmediate = 
-                config.sparsepointdistimmediate * config.sparsepointdistimmediate;
-            sparsecolordistsqimmediate = 
-                config.sparsecolordistimmediate * config.sparsecolordistimmediate;
-            updatepercent = config.updatepercent;
-            agelimit = config.agelimit;
-            reportevery = config.reportevery;
         }
 
         void device_poll() {
-            ros::Rate loop_rate(rate);
+            //ros::Rate loop_rate(rate);
             ros::Time old_t = ros::Time::now();
             bool old_image = false;
 
@@ -589,16 +406,23 @@ namespace zed_wrapper {
                 int right_SubNumber = pub_right.getNumSubscribers();
                 int right_raw_SubNumber = pub_raw_right.getNumSubscribers();
                 int depth_SubNumber = pub_depth.getNumSubscribers();
-                int cloud_SubNumber = pub_cloud.getNumSubscribers();
-                bool runLoop = (rgb_SubNumber + rgb_raw_SubNumber + left_SubNumber + left_raw_SubNumber + right_SubNumber + right_raw_SubNumber + depth_SubNumber + cloud_SubNumber) > 0;
+                bool runLoop = (rgb_SubNumber + rgb_raw_SubNumber + left_SubNumber + left_raw_SubNumber + right_SubNumber + right_raw_SubNumber + depth_SubNumber) > 0;
 
-                runParams.enable_point_cloud = false;
-                if (cloud_SubNumber > 0)
-                    runParams.enable_point_cloud = true;
-                // Run the loop only if there is some subscribers
+                // Run the loop only if there are some subscribers
                 if (runLoop) {
 
-                    computeDepth = (depth_SubNumber + cloud_SubNumber) > 0; // Detect if one of the subscriber need to have the depth information
+                    computeDepth = depth_SubNumber > 0; // Detect if one of the subscriber need to have the depth information
+                    if (computeDepth) {
+                        if (!computingDepth) {
+                            NODELET_INFO("Starting to compute depth information");
+                            computingDepth = true;
+                        } 
+                    } else {
+                        if (computingDepth) {
+                            NODELET_INFO("Stopping computing depth information");
+                            computingDepth = false;
+                        } 
+                    }
                     ros::Time t = ros::Time::now(); // Get current time
 
                     grabbing = true;
@@ -615,7 +439,7 @@ namespace zed_wrapper {
                     grabbing = false;
                     if (old_image) { // Detect if a error occurred (for example: the zed have been disconnected) and re-initialize the ZED
                         NODELET_DEBUG("Wait for a new image to proceed");
-                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
                         if ((t - old_t).toSec() > 5) {
                             zed.close();
 
@@ -687,17 +511,7 @@ namespace zed_wrapper {
                         publishDepth(toCVMat(depthZEDMat), pub_depth, depth_frame_id, t); // in meters
                     }
 
-                    // Publish the point cloud if someone has subscribed to
-                    if (cloud_SubNumber > 0) {
-                        // Run the point cloud convertion asynchronously to avoid slowing down all the program
-                        // Retrieve raw pointCloud data
-                        zed.retrieveMeasure(cloud, sl::MEASURE_XYZBGRA);
-                        point_cloud_frame_id = cloud_frame_id;
-                        point_cloud_time = t;
-                        publishPointCloud(width, height, pub_cloud);
-                    }
-
-                    loop_rate.sleep();
+                    //loop_rate.sleep();
                 } else {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10)); // No subscribers, we just wait
                 }
@@ -712,7 +526,7 @@ namespace zed_wrapper {
             resolution = sl::RESOLUTION_HD720;
             quality = sl::DEPTH_MODE_PERFORMANCE;
             sensing_mode = sl::SENSING_MODE_STANDARD;
-            rate = 30;
+            rate = 5;
             gpu_id = -1;
             zed_id = 0;
 
@@ -759,8 +573,6 @@ namespace zed_wrapper {
 
             string depth_cam_info_topic = "depth/camera_info";
 
-            string point_cloud_topic = "point_cloud/cloud_registered";
-            cloud_frame_id = camera_frame_id;
             camera_to_vr.setIdentity();  // set transform to identity till we get a valid tf
 
             nh_ns.getParam("rgb_topic", rgb_topic);
@@ -778,15 +590,17 @@ namespace zed_wrapper {
             nh_ns.getParam("depth_topic", depth_topic);
             nh_ns.getParam("depth_cam_info_topic", depth_cam_info_topic);
 
-            nh_ns.getParam("point_cloud_topic", point_cloud_topic);
-
             // Initialization transformation listener
             tfBuffer.reset( new tf2_ros::Buffer );
             tf_listener.reset( new tf2_ros::TransformListener(*tfBuffer) );
 
             // Try to initialize the ZED
 
-            param.camera_fps = rate;
+            if (rate >= 15) {
+                param.camera_fps = rate;
+            } else {
+                param.camera_fps = 15;  // camera will only set to min 15
+            }
             param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
             param.camera_buffer_count_linux = 1;  // to cut latency
 
@@ -794,7 +608,7 @@ namespace zed_wrapper {
 
             param.coordinate_units = sl::UNIT_METER;
             param.coordinate_system = sl::COORDINATE_SYSTEM_IMAGE;
-            param.depth_mode = sl::DEPTH_MODE_ULTRA;
+            param.depth_mode = static_cast<sl::DEPTH_MODE> (quality);
             param.sdk_verbose = true;
             param.sdk_gpu_id = gpu_id;
             param.depth_stabilization = depth_stabilization;
@@ -868,10 +682,6 @@ namespace zed_wrapper {
             pub_depth = nh.advertise<rodan_vr_api::CompressedDepth>(depth_topic, 1); //depth
             NODELET_INFO_STREAM("Advertized on topic " << depth_topic);
 
-            //CompressedSparsePointCloud publisher
-            pub_cloud = nh.advertise<rodan_vr_api::CompressedSparsePointCloud> (point_cloud_topic, 1);
-            NODELET_INFO_STREAM("Advertized on topic " << point_cloud_topic);
-
             // Camera info publishers
             pub_rgb_cam_info = nh.advertise<sensor_msgs::CameraInfo>(rgb_cam_info_topic, 1); //rgb
             NODELET_INFO_STREAM("Advertized on topic " << rgb_cam_info_topic);
@@ -881,6 +691,9 @@ namespace zed_wrapper {
             NODELET_INFO_STREAM("Advertized on topic " << right_cam_info_topic);
             pub_depth_cam_info = nh.advertise<sensor_msgs::CameraInfo>(depth_cam_info_topic, 1); //depth
             NODELET_INFO_STREAM("Advertized on topic " << depth_cam_info_topic);
+
+            NODELET_INFO_STREAM("Publish rate " << rate << " Hz");
+            NODELET_INFO_STREAM("GPU count " << getCudaEnabledDeviceCount());
 
             device_poll_thread = boost::shared_ptr<boost::thread>
                     (new boost::thread(boost::bind(&ZEDWrapperNodelet::device_poll, this)));
