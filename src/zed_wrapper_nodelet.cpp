@@ -235,8 +235,9 @@ namespace zed_wrapper {
          */
         void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t, int width, int height) {
 
+            size_t skrunchedDepthAlloc = width*height*sizeof(uint16_t);
             if (!skrunchedDepth) {
-                skrunchedDepth = (uint16_t *)malloc(width*height*sizeof(uint16_t));
+                skrunchedDepth = (uint16_t *)malloc(skrunchedDepthAlloc);
             }
             int i = 0;
             for (int col = 0; col < width; col++) {
@@ -246,9 +247,9 @@ namespace zed_wrapper {
 
             // Now compress it
             const unsigned int MaxCompressedSize =
-                LZF_MAX_COMPRESSED_SIZE(sizeof(skrunchedDepth));
+                LZF_MAX_COMPRESSED_SIZE(skrunchedDepthAlloc);
             CompressedDepth.data.resize(MaxCompressedSize);  // first make sure we could store max size
-            unsigned int cs = lzf_compress (skrunchedDepth, sizeof(skrunchedDepth),
+            unsigned int cs = lzf_compress (skrunchedDepth, skrunchedDepthAlloc,
                                             &CompressedDepth.data[0], MaxCompressedSize);
             CompressedDepth.data.resize(cs);  // set it to proper compressed size
             CompressedDepth.width = width;

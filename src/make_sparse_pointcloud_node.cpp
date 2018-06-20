@@ -143,18 +143,15 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
 
   const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
 
+  if (!skrunchedDepth) {
+      skrunchedDepth = (uint16_t *)malloc(depth_msg.width*depth_msg.height*sizeof(uint16_t));
+  }
   // have a compressed depth_msg, first decompress to get the depth data
   unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
                          depth_msg.data.size(),
                          skrunchedDepth, 
                          depth_msg.width*depth_msg.height*sizeof(uint16_t));
 
-int minx = 1000000;
-int miny = 1000000;
-int minz = 1000000;
-int maxx = -1000000;
-int maxy = -1000000;
-int maxz = -1000000;
   int i = 0;
   for (int v = 0; v < depth_msg.height; ++v)
   {
@@ -189,14 +186,6 @@ int maxz = -1000000;
         uint8_t g = rgb[green_offset];
         uint8_t b = rgb[blue_offset];
 
-//cout<<"xyzrgb: "<<x<<" "<<y<<" "<<z<<" "<<(int)r<<" "<<(int)g<<" "<<(int)b<<endl;
-        if (x < minx) minx = x;
-        if (y < miny) miny = y;
-        if (z < minz) minz = z;
-        if (x > maxx) maxx = x;
-        if (y > maxy) maxy = y;
-        if (z > maxz) maxz = z;
-//cout<<"x: "<<minx<<" : "<<maxx<<", y: "<<miny<<" : "<<maxy<<", z: "<<minz<<" : "<<maxz<<endl;
                 // see if different from Baseline, if so update it
                 if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
                     (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > sparsecolordistsq)) {

@@ -61,12 +61,12 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   // have a compressed depth_msg, first decompress to get the depth data
   static uint16_t *skrunchedDepth = nullptr;
   if (!skrunchedDepth) {
-      skrunchedDepth = (uint16_t *)malloc(cloud_msg->height*cloud_msg->width*sizeof(uint16_t));
+      skrunchedDepth = (uint16_t *)malloc(depth_msg.height*depth_msg.width*sizeof(uint16_t));
   }
   unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
                          depth_msg.data.size(),
                          skrunchedDepth, 
-                         cloud_msg->height * cloud_msg->width * sizeof(uint16_t));
+                         depth_msg.height * depth_msg.width * sizeof(uint16_t));
 
   int i = 0;
   for (int v = 0; v < int(cloud_msg->height); ++v)
