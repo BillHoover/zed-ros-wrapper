@@ -71,6 +71,8 @@
 #define HLOG 22
 #include "lzf.h"
 
+static uint16_t *skrunchedDepth = nullptr;
+
 using namespace std;
 using namespace cv::cuda;
 
@@ -107,7 +109,6 @@ namespace zed_wrapper {
 
         rodan_vr_api::CompressedDepth CompressedDepth;
         ros::Time LastDepthPublishTime = ros::Time(0);
-        uint16_t skrunchedDepth[1280][720];
 
         // zed object
         sl::InitParameters param;
@@ -232,11 +233,15 @@ namespace zed_wrapper {
          * \param depth_frame_id : the id of the reference frame of the depth image
          * \param t : the ros::Time to stamp the depth image
          */
-        void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t) {
+        void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t, int width, int height) {
 
-            for (int col = 0; col < 1280; col++) {
-            for (int row = 0; row < 720; row++) {
-                skrunchedDepth[col][row] = dv(depth.at<float>(row, col));
+            if (!skrunchedDepth) {
+                skrunchedDepth = (uint16_t *)malloc(width*height*sizeof(uint16_t));
+            }
+            int i = 0;
+            for (int col = 0; col < width; col++) {
+            for (int row = 0; row < height; row++, ++i) {
+                skrunchedDepth[i] = dv(depth.at<float>(row, col));
             }}
 
             // Now compress it
@@ -246,8 +251,8 @@ namespace zed_wrapper {
             unsigned int cs = lzf_compress (skrunchedDepth, sizeof(skrunchedDepth),
                                             &CompressedDepth.data[0], MaxCompressedSize);
             CompressedDepth.data.resize(cs);  // set it to proper compressed size
-            CompressedDepth.width = 1280;
-            CompressedDepth.height = 720;
+            CompressedDepth.width = width;
+            CompressedDepth.height = height;
 
             // add camera info so we don't need access in windows
             sl::CameraInformation zedParam = zed.getCameraInformation();
@@ -508,7 +513,7 @@ namespace zed_wrapper {
                     if (depth_SubNumber > 0) {
                         zed.retrieveMeasure(depthZEDMat, sl::MEASURE_DEPTH);
                         publishCamInfo(depth_cam_info_msg, pub_depth_cam_info, t);
-                        publishDepth(toCVMat(depthZEDMat), pub_depth, depth_frame_id, t); // in meters
+                        publishDepth(toCVMat(depthZEDMat), pub_depth, depth_frame_id, t, width, height); // in meters
                     }
 
                     //loop_rate.sleep();

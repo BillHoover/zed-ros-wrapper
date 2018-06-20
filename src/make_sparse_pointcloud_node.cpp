@@ -18,9 +18,6 @@
 #include <rodan_vr_api/SparseXYZRGB.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
 
-const int IMAGE_WIDTH = 1280;
-const int IMAGE_HEIGHT = 720;
-
 // parameters for the special LZ compression
 #define VERY_FAST 0
 #define HLOG 22
@@ -40,7 +37,7 @@ static bool HaveDepth = false;
 
 rodan_vr_api::CompressedDepth CompressedDepth;
 ros::Time LastDepthPublishTime = ros::Time(0);
-uint16_t skrunchedDepth[IMAGE_WIDTH][IMAGE_HEIGHT];
+static uint16_t *skrunchedDepth = nullptr;
 
 int sparsepointdistsq = 625;
 int sparsecolordistsq = 625;
@@ -96,7 +93,7 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
         // total points is constant
         // check each point and only update ones that are enough different
         if (TotalPoints == 0) {
-            TotalPoints = IMAGE_WIDTH * IMAGE_HEIGHT;
+            TotalPoints = depth_msg.width * depth_msg.height;
 
             // reserve space for max for both vectors
             Baseline.reserve(TotalPoints);
@@ -147,9 +144,10 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
 
   // have a compressed depth_msg, first decompress to get the depth data
-  uint16_t skrunchedDepth[IMAGE_WIDTH][IMAGE_HEIGHT];
-  unsigned int ucs = lzf_decompress(&depth_msg.data[0], depth_msg.data.size(),
-                                    skrunchedDepth, sizeof(skrunchedDepth));
+  unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
+                         depth_msg.data.size(),
+                         skrunchedDepth, 
+                         depth_msg.width*depth_msg.height*sizeof(uint16_t));
 
 int minx = 1000000;
 int miny = 1000000;
@@ -158,11 +156,11 @@ int maxx = -1000000;
 int maxy = -1000000;
 int maxz = -1000000;
   int i = 0;
-  for (int v = 0; v < IMAGE_HEIGHT; ++v)
+  for (int v = 0; v < depth_msg.height; ++v)
   {
-    for (int u = 0; u < IMAGE_WIDTH; ++u, ++i, rgb += color_step)
+    for (int u = 0; u < depth_msg.width; ++u, ++i, rgb += color_step)
     {
-      uint16_t depth = skrunchedDepth[u][v];
+      uint16_t depth = skrunchedDepth[i];
 
       if (depth > 0) {   // don't generate pointcloud point for invalid
         // Fill in XYZ

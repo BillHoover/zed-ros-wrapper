@@ -59,15 +59,21 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
   sensor_msgs::PointCloud2Iterator<uint8_t> iter_a(*cloud_msg, "a");
 
   // have a compressed depth_msg, first decompress to get the depth data
-  uint16_t skrunchedDepth[1280][720];
-  unsigned int ucs = lzf_decompress(&depth_msg.data[0], depth_msg.data.size(),
-                                    skrunchedDepth, sizeof(skrunchedDepth));
+  static uint16_t *skrunchedDepth = nullptr;
+  if (!skrunchedDepth) {
+      skrunchedDepth = (uint16_t *)malloc(cloud_msg->height*cloud_msg->width*sizeof(uint16_t));
+  }
+  unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
+                         depth_msg.data.size(),
+                         skrunchedDepth, 
+                         cloud_msg->height * cloud_msg->width * sizeof(uint16_t));
 
+  int i = 0;
   for (int v = 0; v < int(cloud_msg->height); ++v)
   {
-    for (int u = 0; u < int(cloud_msg->width); ++u, rgb += color_step, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
+    for (int u = 0; u < int(cloud_msg->width); ++u, ++i, rgb += color_step, ++iter_x, ++iter_y, ++iter_z, ++iter_a, ++iter_r, ++iter_g, ++iter_b)
     {
-      uint16_t depth = skrunchedDepth[u][v];
+      uint16_t depth = skrunchedDepth[i];
 
       if (depth > 0) {   // don't generate pointcloud point for invalid
         // Fill in XYZ
