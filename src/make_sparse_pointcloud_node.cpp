@@ -23,6 +23,8 @@
 #define HLOG 22
 #include "lzf.h"
 
+static int rate = 1;  // rate in Hz to publish pointcloud
+
 namespace enc = sensor_msgs::image_encodings;
 using namespace std;
 
@@ -46,26 +48,25 @@ int sparsecolordistsqimmediate = 2500;
 int updatepercent = 100;
 int agelimit = 15;  // in frames
 
+static int16_t zedToInt16(float v)
+{
+    // take the ZED value (float meters) and return int16 mm
+    // limit values to +- 10000
+    // if -inf, +inf, or NaN, or outside range, return -11111
+    if (isnanf(v) || isinff(v)) {
+       return -11111;
+    }
+    v *= 1000.0f;
+    v += 0.5f;
+    if (v > 10000.0f)  v=-11111.0f;
+    if (v < -10000.0f) v=-11111.0f;
+        return static_cast<int16_t>(v);
+    }
 
-        static int16_t zedToInt16(float v)
-        {
-            // take the ZED value (float meters) and return int16 mm
-            // limit values to +- 10000
-            // if -inf, +inf, or NaN, or outside range, return -11111
-            if (isnanf(v) || isinff(v)) {
-                return -11111;
-            }
-            v *= 1000.0f;
-            v += 0.5f;
-            if (v > 10000.0f)  v=-11111.0f;
-            if (v < -10000.0f) v=-11111.0f;
-            return static_cast<int16_t>(v);
-        }
-
-        static int dist3ds(int a1, int b1, int c1, int a2, int b2, int c2)
-        {
-            return (a1 - a2) * (a1 - a2) + (b1 - b2) * (b1 - b2) + (c1 - c2) * (c1 - c2);
-        }
+static int dist3ds(int a1, int b1, int c1, int a2, int b2, int c2)
+{
+    return (a1 - a2) * (a1 - a2) + (b1 - b2) * (b1 - b2) + (c1 - c2) * (c1 - c2);
+}
 
 // take the rgb and depth images and construct the pointcloud
 // then compress is using the sparse method but with parameters for LAN use
@@ -73,129 +74,115 @@ int agelimit = 15;  // in frames
 void convert(const rodan_vr_api::CompressedDepth& depth_msg,
              const cv::Mat rgb_image)
 {
-        static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
-        static std::vector<int32_t> BaselineLastUpdate; // frameNumber last updated
-        static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
-        static rodan_vr_api::SparseXYZRGB notvalid;
-        static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
-        static unsigned int MaxCompressedSize;
-        static int32_t TotalPoints = 0;
-        static int32_t frameNumber = 0;
+    static std::vector<rodan_vr_api::SparseXYZRGB> Baseline;  // baseline PC - not sent
+    static std::vector<int32_t> BaselineLastUpdate; // frameNumber last updated
+    static std::vector<rodan_vr_api::SparseXYZRGB> Updates;   // deltas from baseline
+    static rodan_vr_api::SparseXYZRGB notvalid;
+    static rodan_vr_api::CompressedSparsePointCloud CompressedUpdates;
+    static unsigned int MaxCompressedSize;
+    static int32_t TotalPoints = 0;
+    static int32_t frameNumber = 0;
 
-        // set up randon number generator
-        // Seed with a real random value, if available
-        static std::random_device r;
- 
-        static std::minstd_rand e1(r());
-        static std::uniform_int_distribution<int> uniform_dist(1, 100);
+    frameNumber++;
+    // total points is constant
+    // check each point and only update ones that are enough different
+    if (TotalPoints == 0) {
+        TotalPoints = depth_msg.width * depth_msg.height;
 
-        frameNumber++;
-        // total points is constant
-        // check each point and only update ones that are enough different
-        if (TotalPoints == 0) {
-            TotalPoints = depth_msg.width * depth_msg.height;
+        // reserve space for max for both vectors
+        Baseline.reserve(TotalPoints);
+        BaselineLastUpdate.reserve(TotalPoints);
+        Updates.reserve(TotalPoints);
+        MaxCompressedSize = LZF_MAX_COMPRESSED_SIZE(TotalPoints * sizeof(rodan_vr_api::SparseXYZRGB));
+        CompressedUpdates.totalpoints = TotalPoints;
+        CompressedUpdates.data.reserve(MaxCompressedSize);
 
-            // reserve space for max for both vectors
-            Baseline.reserve(TotalPoints);
-            BaselineLastUpdate.reserve(TotalPoints);
-            Updates.reserve(TotalPoints);
-            MaxCompressedSize = LZF_MAX_COMPRESSED_SIZE(TotalPoints * sizeof(rodan_vr_api::SparseXYZRGB));
-            CompressedUpdates.totalpoints = TotalPoints;
-            CompressedUpdates.data.reserve(MaxCompressedSize);
+        // init the notvalid entry
+        notvalid.x = notvalid.y = notvalid.z = -11111;
+        notvalid.r = notvalid.g = notvalid.b = 0;
+        notvalid.index1 = notvalid.index2 = notvalid.index3 = 0;
 
-            // init the notvalid entry
-            notvalid.x = notvalid.y = notvalid.z = -11111;
-            notvalid.r = notvalid.g = notvalid.b = 0;
-            notvalid.index1 = notvalid.index2 = notvalid.index3 = 0;
-
-            // initialize the entire baseline vector to notvalid
-            for (int i = 0; i < TotalPoints; i++) {
-                Baseline[i] = notvalid;
-                BaselineLastUpdate[i] = 0;
-            }
-        }
-
-        // go through and invalidate any entries older than age limit
-        int lastValidFrame = frameNumber - agelimit;
+        // initialize the entire baseline vector to notvalid
         for (int i = 0; i < TotalPoints; i++) {
-            if (BaselineLastUpdate[i] < lastValidFrame) {
-                Baseline[i] = notvalid;
-                BaselineLastUpdate[i] = 0;
-            }
+            Baseline[i] = notvalid;
+            BaselineLastUpdate[i] = 0;
         }
+    }
 
-        Updates.clear();  // No deltas yet
+    // go through and invalidate any entries older than age limit
+    int lastValidFrame = frameNumber - agelimit;
+    for (int i = 0; i < TotalPoints; i++) {
+        if (BaselineLastUpdate[i] < lastValidFrame) {
+            Baseline[i] = notvalid;
+            BaselineLastUpdate[i] = 0;
+        }
+    }
 
+    Updates.clear();  // No deltas yet
 
-  // Use correct principal point from calibration
-  float center_x = depth_msg.cx;
-  float center_y = depth_msg.cy;
+    // Use correct principal point from calibration
+    float center_x = depth_msg.cx;
+    float center_y = depth_msg.cy;
 
-  // Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
-  double unit_scaling = .001;  //convert mm to m
-  float constant_x = unit_scaling / depth_msg.fx;
-  float constant_y = unit_scaling / depth_msg.fy;
+    // Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
+    double unit_scaling = .001;  //convert mm to m
+    float constant_x = unit_scaling / depth_msg.fx;
+    float constant_y = unit_scaling / depth_msg.fy;
   
-  const int red_offset   = 2;
-  const int green_offset = 1;
-  const int blue_offset  = 0;
-  const int color_step   = 3;
+    const int red_offset   = 2;
+    const int green_offset = 1;
+    const int blue_offset  = 0;
+    const int color_step   = 3;
 
-  const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
+    const uint8_t* rgb = &rgb_image.at<uint8_t>(0, 0);
 
-  if (!skrunchedDepth) {
-      skrunchedDepth = (uint16_t *)malloc(depth_msg.width*depth_msg.height*sizeof(uint16_t));
-  }
-  // have a compressed depth_msg, first decompress to get the depth data
-  unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
-                         depth_msg.data.size(),
-                         skrunchedDepth, 
-                         depth_msg.width*depth_msg.height*sizeof(uint16_t));
+    if (!skrunchedDepth) {
+        skrunchedDepth = (uint16_t *)malloc(depth_msg.width*depth_msg.height*sizeof(uint16_t));
+    }
 
-  int i = 0;
-  for (int v = 0; v < depth_msg.height; ++v)
-  {
-    for (int u = 0; u < depth_msg.width; ++u, ++i, rgb += color_step)
+    // have a compressed depth_msg, first decompress to get the depth data
+    unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
+                           depth_msg.data.size(),
+                           skrunchedDepth, 
+                           depth_msg.width*depth_msg.height*sizeof(uint16_t));
+
+    int i = 0;
+    for (int v = 0; v < depth_msg.height; ++v)
     {
-      uint16_t depth = skrunchedDepth[i];
+        for (int u = 0; u < depth_msg.width; ++u, ++i, rgb += color_step)
+        {
+            uint16_t depth = skrunchedDepth[i];
 
-      if (depth > 0) {   // don't generate pointcloud point for invalid
-        // Fill in XYZ
-        // map from u,v,depth to x,y,z using camera info
-        float xx = (u - center_x) * depth * constant_x;
-        float yy = (v - center_y) * depth * constant_y;
-        float zz = depth * .001;  // convert to meters
+            if (depth > 0) {   // don't generate pointcloud point for invalid
+                // Fill in XYZ
+                // map from u,v,depth to x,y,z using camera info
+                float xx = (u - center_x) * depth * constant_x;
+                float yy = (v - center_y) * depth * constant_y;
+                float zz = depth * .001;  // convert to meters
 
-        // need to reorder coords
-        float nx = zz;
-        float ny = -xx;
-        float nz = -yy;
+                // need to reorder coords
+                float nx = zz;
+                float ny = -xx;
+                float nz = -yy;
 
-        // now apply the transform from the camera to rodan_vr_frame
-        int16_t x = zedToInt16(nx * depth_msg.basis00 + 
-                  ny * depth_msg.basis01 + 
-                  nz * depth_msg.basis02 + depth_msg.originX);
-        int16_t y = zedToInt16(nx * depth_msg.basis10 + 
-                  ny * depth_msg.basis11 + 
-                  nz * depth_msg.basis12 + depth_msg.originY);
-        int16_t z = zedToInt16(nx * depth_msg.basis20 + 
-                  ny * depth_msg.basis21 + 
-                  nz * depth_msg.basis22 + depth_msg.originZ);
+                // now apply the transform from the camera to rodan_vr_frame
+                int16_t x = zedToInt16(nx * depth_msg.basis00 + 
+                                ny * depth_msg.basis01 + 
+                                nz * depth_msg.basis02 + depth_msg.originX);
+                int16_t y = zedToInt16(nx * depth_msg.basis10 + 
+                                ny * depth_msg.basis11 + 
+                                nz * depth_msg.basis12 + depth_msg.originY);
+                int16_t z = zedToInt16(nx * depth_msg.basis20 + 
+                                ny * depth_msg.basis21 + 
+                                nz * depth_msg.basis22 + depth_msg.originZ);
 
-        uint8_t r = rgb[red_offset];
-        uint8_t g = rgb[green_offset];
-        uint8_t b = rgb[blue_offset];
+                uint8_t r = rgb[red_offset];
+                uint8_t g = rgb[green_offset];
+                uint8_t b = rgb[blue_offset];
 
                 // see if different from Baseline, if so update it
                 if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) > sparsepointdistsq) ||
                     (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) > sparsecolordistsq)) {
-                    // OK, it met the first delta criterion
-                    // now check if it is bad enough that we must, or the 
-                    // proper percentage
-                    // see if it is one of the ones we want based on percentage
-                    if ((dist3ds(x, y, z, Baseline[i].x, Baseline[i].y, Baseline[i].z) <= sparsepointdistsqimmediate) &&
-                        (dist3ds(r, g, b, Baseline[i].r, Baseline[i].g, Baseline[i].b) <= sparsecolordistsqimmediate) &&
-                        (uniform_dist(e1) > updatepercent)) continue; 
 
                     // update baseline with the new values
                     Baseline[i].x = x;
@@ -216,12 +203,12 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
         }
     }
            
-            // compress it
-            CompressedUpdates.data.resize(MaxCompressedSize);  // first make sure we could store max size
-            unsigned int cs = lzf_compress (&Updates[0], Updates.size() * sizeof(Updates[0]),
-                                            &CompressedUpdates.data[0], MaxCompressedSize);
-            CompressedUpdates.data.resize(cs);  // set it to proper compressed size
-            pub.publish(CompressedUpdates);
+    // compress it
+    CompressedUpdates.data.resize(MaxCompressedSize);  // first make sure we could store max size
+    unsigned int cs = lzf_compress (&Updates[0], Updates.size() * sizeof(Updates[0]),
+                                    &CompressedUpdates.data[0], MaxCompressedSize);
+    CompressedUpdates.data.resize(cs);  // set it to proper compressed size
+    pub.publish(CompressedUpdates);
 }
 
 void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
@@ -260,7 +247,10 @@ int main(int argc, char** argv) {
     ros::Subscriber rgbSub = 
         nh.subscribe<sensor_msgs::CompressedImageConstPtr>("/zed/rgb/image_rect_color/compressed", 1, rgbCb);
 
-    ros::spin();
+    while(true) { 
+        ros::Rate(rate).sleep(); 
+        ros::spinOnce();
+    }
 
     return 0;
 }

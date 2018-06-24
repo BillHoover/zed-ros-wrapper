@@ -376,7 +376,7 @@ namespace zed_wrapper {
         }
 
         void device_poll() {
-            //ros::Rate loop_rate(rate);
+            ros::Rate loop_rate(rate);
             ros::Time old_t = ros::Time::now();
             bool old_image = false;
 
@@ -517,7 +517,7 @@ namespace zed_wrapper {
                         publishDepth(toCVMat(depthZEDMat), pub_depth, depth_frame_id, t, width, height); // in meters
                     }
 
-                    //loop_rate.sleep();
+                    loop_rate.sleep();
                 } else {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10)); // No subscribers, we just wait
                 }
