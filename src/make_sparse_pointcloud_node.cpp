@@ -17,11 +17,15 @@
 #include <rodan_vr_api/CompressedDepth.h>
 #include <rodan_vr_api/SparseXYZRGB.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
+#include <dynamic_reconfigure/server.h>
+#include <zed_wrapper/ZedConfig.h>
 
 // parameters for the special LZ compression
 #define VERY_FAST 0
 #define HLOG 22
 #include "lzf.h"
+
+boost::shared_ptr<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>> server;
 
 static int rate = 1;  // rate in Hz to publish pointcloud
 
@@ -43,10 +47,14 @@ static uint16_t *skrunchedDepth = nullptr;
 
 int sparsepointdistsq = 625;
 int sparsecolordistsq = 625;
-int sparsepointdistsqimmediate = 2500;
-int sparsecolordistsqimmediate = 2500;
-int updatepercent = 100;
-int agelimit = 15;  // in frames
+int agelimit = 5;  // in frames
+
+void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
+    ROS_INFO("Reconfigure: pointcloudrate %d", config.pointcloudrate);
+    ROS_INFO("Reconfigure: sparsepointdist %d", config.sparsepointdist);
+    ROS_INFO("Reconfigure: sparsecolordist %d", config.sparsecolordist);
+    ROS_INFO("Reconfigure: agelimit %d", config.agelimit);
+}
 
 static int16_t zedToInt16(float v)
 {
@@ -106,6 +114,10 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
         for (int i = 0; i < TotalPoints; i++) {
             Baseline[i] = notvalid;
             BaselineLastUpdate[i] = 0;
+        }
+    } else {
+        if (TotalPoints != (depth_msg.width * depth_msg.height)) {
+            ROS_ERROR("You must restart make_sparse_pointcloud_node since the resolution was changed.");
         }
     }
 
@@ -246,6 +258,12 @@ int main(int argc, char** argv) {
 
     ros::Subscriber rgbSub = 
         nh.subscribe<sensor_msgs::CompressedImageConstPtr>("/zed/rgb/image_rect_color/compressed", 1, rgbCb);
+
+    //Reconfigure for various parameters
+    server = boost::make_shared<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>>();
+    dynamic_reconfigure::Server<zed_wrapper::ZedConfig>::CallbackType f;
+    f = boost::bind(&callback, _1, _2);
+    server->setCallback(f);
 
     while(true) { 
         ros::Rate(rate).sleep(); 

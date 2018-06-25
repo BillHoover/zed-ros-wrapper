@@ -371,6 +371,7 @@ namespace zed_wrapper {
         }
 
        void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
+            NODELET_INFO("Reconfigure: rgbrate %d", config.rgbrate);
             NODELET_INFO("Reconfigure: confidence %d", config.confidence);
             confidence = config.confidence;
         }
