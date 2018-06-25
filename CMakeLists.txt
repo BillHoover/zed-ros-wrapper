@@ -65,6 +65,7 @@ checkPackage("rodan_vr_api" "")
 
 generate_dynamic_reconfigure_options(
   cfg/Zed.cfg
+  cfg/MakePointcloud.cfg
 )
 
 catkin_package(

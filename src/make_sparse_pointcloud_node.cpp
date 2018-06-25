@@ -18,14 +18,14 @@
 #include <rodan_vr_api/SparseXYZRGB.h>
 #include <rodan_vr_api/CompressedSparsePointCloud.h>
 #include <dynamic_reconfigure/server.h>
-#include <zed_wrapper/ZedConfig.h>
+#include <zed_wrapper/MakePointcloudConfig.h>
 
 // parameters for the special LZ compression
 #define VERY_FAST 0
 #define HLOG 22
 #include "lzf.h"
 
-boost::shared_ptr<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>> server;
+boost::shared_ptr<dynamic_reconfigure::Server<zed_wrapper::MakePointcloudConfig>> server;
 
 static int rate = 1;  // rate in Hz to publish pointcloud
 
@@ -49,7 +49,7 @@ int sparsepointdistsq = 625;
 int sparsecolordistsq = 625;
 int agelimit = 5;  // in frames
 
-void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
+void callback(zed_wrapper::MakePointcloudConfig &config, uint32_t level) {
     ROS_INFO("Reconfigure: pointcloudrate %d", config.pointcloudrate);
     ROS_INFO("Reconfigure: sparsepointdist %d", config.sparsepointdist);
     ROS_INFO("Reconfigure: sparsecolordist %d", config.sparsecolordist);
@@ -260,8 +260,8 @@ int main(int argc, char** argv) {
         nh.subscribe<sensor_msgs::CompressedImageConstPtr>("/zed/rgb/image_rect_color/compressed", 1, rgbCb);
 
     //Reconfigure for various parameters
-    server = boost::make_shared<dynamic_reconfigure::Server<zed_wrapper::ZedConfig>>();
-    dynamic_reconfigure::Server<zed_wrapper::ZedConfig>::CallbackType f;
+    server = boost::make_shared<dynamic_reconfigure::Server<zed_wrapper::MakePointcloudConfig>>();
+    dynamic_reconfigure::Server<zed_wrapper::MakePointcloudConfig>::CallbackType f;
     f = boost::bind(&callback, _1, _2);
     server->setCallback(f);
 
