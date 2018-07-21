@@ -54,6 +54,10 @@ void callback(zed_wrapper::MakePointcloudConfig &config, uint32_t level) {
     ROS_INFO("Reconfigure: sparsepointdist %d", config.sparsepointdist);
     ROS_INFO("Reconfigure: sparsecolordist %d", config.sparsecolordist);
     ROS_INFO("Reconfigure: agelimit %d", config.agelimit);
+    rate = config.pointcloudrate;
+    sparsepointdistsq = config.sparsepointdist * config.sparsepointdist;
+    sparsecolordistsq = config.sparsecolordist * config.sparsecolordist;
+    agelimit = config.agelimit;
 }
 
 static int16_t zedToInt16(float v)
@@ -118,6 +122,7 @@ void convert(const rodan_vr_api::CompressedDepth& depth_msg,
     } else {
         if (TotalPoints != (depth_msg.width * depth_msg.height)) {
             ROS_ERROR("You must restart make_sparse_pointcloud_node since the resolution was changed.");
+            abort();
         }
     }
 

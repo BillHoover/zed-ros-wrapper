@@ -108,6 +108,11 @@ namespace zed_wrapper {
         int zed_id;
         int depth_stabilization;
 
+        int lastresolution;
+        int lastquality;
+        int lastsensing_mode;
+        size_t lastalloc = 0;
+
         rodan_vr_api::CompressedDepth CompressedDepth;
         ros::Time LastDepthPublishTime = ros::Time(0);
 
@@ -238,7 +243,9 @@ namespace zed_wrapper {
         void publishDepth(cv::Mat depth, ros::Publisher &pub_depth, string depth_frame_id, ros::Time t, int width, int height) {
 
             size_t skrunchedDepthAlloc = width*height*sizeof(uint16_t);
-            if (!skrunchedDepth) {
+            if (lastalloc != skrunchedDepthAlloc) {
+                if (skrunchedDepth) free(skrunchedDepth);
+                lastalloc = skrunchedDepthAlloc;
                 skrunchedDepth = (uint16_t *)malloc(skrunchedDepthAlloc);
                 lastDepth = (uint16_t *)malloc(skrunchedDepthAlloc);
                 lastDepthAge = (uint8_t *)malloc(width*height*sizeof(uint8_t));
@@ -248,6 +255,7 @@ namespace zed_wrapper {
             int pixelsbad = 0;
             int pixelsnew = 0;
             int pixelsadj = 0;
+
             int i = 0;
             for (int row = 0; row < height; row++) {
             for (int col = 0; col < width; col++, ++i) {
@@ -431,6 +439,7 @@ namespace zed_wrapper {
        void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
             NODELET_INFO("Reconfigure: rgbrate %d", config.rgbrate);
             NODELET_INFO("Reconfigure: confidence %d", config.confidence);
+            rate = config.rgbrate;
             confidence = config.confidence;
         }
 
