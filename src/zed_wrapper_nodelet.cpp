@@ -19,7 +19,6 @@
 ///////////////////////////////////////////////////////////////////////////
 
 
-
 /****************************************************************************************************
  ** This sample is a wrapper for the ZED library in order to use the ZED Camera with ROS.          **
  ** A set of parameters can be specified in the launch file.                                       **
@@ -72,6 +71,8 @@
 #include "lzf.h"
 
 static uint16_t *skrunchedDepth = nullptr;
+static uint16_t *lastDepth = nullptr;
+static uint8_t *lastDepthAge = nullptr;
 
 using namespace std;
 using namespace cv::cuda;
@@ -120,8 +121,6 @@ namespace zed_wrapper {
         bool computeDepth;  // whether to compute depth
         bool computingDepth = false;  // whether we currently are computing depth
         bool grabbing = false;
-        // I want the following to be 0 for new depth compression
-        int openniDepthMode = 0; // 16 bit UC data in mm else 32F in m, for more info http://www.ros.org/reps/rep-0118.html
 
         // Transform from zed_initial_frame to rodan_vr_frame
         tf2::Transform camera_to_vr;  // will always have the latest valid one
@@ -219,11 +218,14 @@ namespace zed_wrapper {
 
         // clamp the depth value between .3m and 5m and convert to uint16 mm
         static uint16_t dv(float v) {
-            if (isinff(v)) {
-                if (v < 0.0) v = .3;
-                else  v = 5.0;
+            if (isnanf(v)) {
+                v = 0.0;
+            } else {
+                if (isinff(v)) {
+                    if (v < 0.0) v = .3;
+                    else  v = 5.0;
+                }
             }
-            if (isnanf(v)) v = 0.0;
             return (uint16_t)(v * 1000.0f + .5f);
         }
 
@@ -238,12 +240,68 @@ namespace zed_wrapper {
             size_t skrunchedDepthAlloc = width*height*sizeof(uint16_t);
             if (!skrunchedDepth) {
                 skrunchedDepth = (uint16_t *)malloc(skrunchedDepthAlloc);
+                lastDepth = (uint16_t *)malloc(skrunchedDepthAlloc);
+                lastDepthAge = (uint8_t *)malloc(width*height*sizeof(uint8_t));
+                for (int i = 0; i < width*height; i++) lastDepthAge[i] = 255;
             }
+            int pixelsold = 0;
+            int pixelsbad = 0;
+            int pixelsnew = 0;
+            int pixelsadj = 0;
             int i = 0;
             for (int row = 0; row < height; row++) {
             for (int col = 0; col < width; col++, ++i) {
                 skrunchedDepth[i] = dv(depth.at<float>(row, col));
+                if (skrunchedDepth[i] == 0) {  // no new value
+                    if (lastDepthAge[i] < 255) { // if a recent enough value use it
+                        lastDepthAge[i] += 1;
+                        skrunchedDepth[i] = lastDepth[i];
+                        pixelsold++;
+                    } else {
+                       pixelsbad++;
+                    }
+                } else {
+                    lastDepth[i] = skrunchedDepth[i];
+                    lastDepthAge[i] = 0;
+                    pixelsnew++;
+                }
             }}
+
+            // make a pass and try using adjacent for any remaining bad ones
+            // do it from lastDepth (which at this point is current) to avoid cascading things
+            i = 0;
+            for (int row = 0; row < height; row++) {
+            for (int col = 0; col < width; col++, ++i) {
+                if (skrunchedDepth[i] != 0) continue;  // have a good value so nothing to do
+                // also skip the edges as we don't have enough adjacent pixels
+                if ((col < 1) || (col > width-2) || (row < 1) || (row > height-2)) continue;
+
+                int avgpixel = 0;
+                int goodadj = 0;
+                // note that we know this one has 0, so can blindly "include" below
+                for (int k = i-1; k <= i+1; k++) {
+                    if (lastDepth[k - width] > 0) {
+                        avgpixel += lastDepth[k - width]; // above   
+                        ++goodadj;
+                    }
+                    if (lastDepth[k] > 0) {
+                        avgpixel += lastDepth[k]; // in line   
+                        ++goodadj;
+                    }
+                    if (lastDepth[k + width] > 0) {
+                        avgpixel += lastDepth[k + width]; // below   
+                        ++goodadj;
+                    }
+                }
+                // if we have at least two valid adj pixels, use it
+                if (goodadj >= 2) {
+                    skrunchedDepth[i] = avgpixel / goodadj; 
+                    --pixelsbad;
+                    ++pixelsadj;
+                }
+            }}
+            //NODELET_INFO_STREAM("Pixels: new: " << pixelsnew << ", old: " << pixelsold << ", adj: " << pixelsadj << ", bad: " << pixelsbad);
+            
 
             // Now compress it
             const unsigned int MaxCompressedSize =
@@ -450,7 +508,7 @@ namespace zed_wrapper {
                         if ((t - old_t).toSec() > 5) {
                             zed.close();
 
-                            NODELET_INFO("Re-openning the ZED");
+                            NODELET_INFO("Re-opening the ZED");
                             sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
                             while (err != sl::SUCCESS) {
                                 err = zed.open(param); // Try to initialize the ZED
@@ -545,7 +603,6 @@ namespace zed_wrapper {
             nh_ns.getParam("quality", quality);
             nh_ns.getParam("sensing_mode", sensing_mode);
             nh_ns.getParam("frame_rate", rate);
-            nh_ns.getParam("openni_depth_mode", openniDepthMode);
             nh_ns.getParam("gpu_id", gpu_id);
             nh_ns.getParam("zed_id", zed_id);
             nh_ns.getParam("depth_stabilization", depth_stabilization);
@@ -571,12 +628,7 @@ namespace zed_wrapper {
             rgb_frame_id = depth_frame_id;
 
             string depth_topic = "depth/";
-            if (openniDepthMode) {
-                NODELET_INFO_STREAM("Openni depth mode activated");
-                depth_topic += "depth_raw_registered";
-            } else {
-                depth_topic += "depth_registered";
-            }
+            depth_topic += "depth_registered";
 
             string depth_cam_info_topic = "depth/camera_info";
 
