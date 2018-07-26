@@ -463,7 +463,6 @@ namespace zed_wrapper {
         }
 
         void device_poll() {
-            ros::Rate loop_rate(rate);
             ros::Time old_t = ros::Time::now();
             bool old_image = false;
 
@@ -491,6 +490,7 @@ namespace zed_wrapper {
             sl::Mat leftZEDMat, rightZEDMat, depthZEDMat;
             // Main loop
             while (nh_ns.ok()) {
+                ros::Rate loop_rate(rate);
                 // Check for subscribers
                 int rgb_SubNumber = pub_rgb.getNumSubscribers();
                 int rgb_raw_SubNumber = pub_raw_rgb.getNumSubscribers();
