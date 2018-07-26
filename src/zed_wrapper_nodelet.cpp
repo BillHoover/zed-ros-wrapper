@@ -107,10 +107,16 @@ namespace zed_wrapper {
         int gpu_id;
         int zed_id;
         int depth_stabilization;
+        int exposure;
+        int gain;
+        bool auto_exposure;
 
         int lastresolution;
         int lastquality;
-        int lastsensing_mode;
+        int lastrate;
+        int lastexposure;
+        int lastgain;
+        bool lastauto_exposure;
         size_t lastalloc = 0;
 
         rodan_vr_api::CompressedDepth CompressedDepth;
@@ -437,10 +443,23 @@ namespace zed_wrapper {
         }
 
        void callback(zed_wrapper::ZedConfig &config, uint32_t level) {
+            NODELET_INFO("Reconfigure: resolution %d", config.resolution);
+            NODELET_INFO("Reconfigure: quality %d", config.quality);
+            NODELET_INFO("Reconfigure: sensing_mode %d", config.sensing_mode);
             NODELET_INFO("Reconfigure: rgbrate %d", config.rgbrate);
             NODELET_INFO("Reconfigure: confidence %d", config.confidence);
+            NODELET_INFO("Reconfigure: exposure %d", config.exposure);
+            NODELET_INFO("Reconfigure: gain %d", config.gain);
+            NODELET_INFO("Reconfigure: auto_exposure %s", config.auto_exposure ?
+                         "Enable" : "Disable");
+            resolution = config.resolution;
+            quality = config.quality;
+            sensing_mode = config.sensing_mode;
             rate = config.rgbrate;
             confidence = config.confidence;
+            exposure = config.exposure;
+            gain = config.gain;
+            auto_exposure = config.auto_exposure;
         }
 
         void device_poll() {
@@ -485,6 +504,27 @@ namespace zed_wrapper {
                 // Run the loop only if there are some subscribers
                 if (runLoop) {
 
+                    // if rate, resolution, or quality change, need to close and reopen
+                    if ((rate != lastrate) || (resolution != lastresolution) || (quality != lastquality)) {
+                        if (rate >= 15) {
+                            param.camera_fps = rate;
+                        } else {
+                            param.camera_fps = 15;  // camera will only set to min 15
+                        }
+                        param.camera_resolution = static_cast<sl::RESOLUTION> (resolution);
+                        param.depth_mode = static_cast<sl::DEPTH_MODE> (quality);
+                        zed.close();
+                        NODELET_INFO("Re-opening the ZED");
+                        sl::ERROR_CODE err = sl::ERROR_CODE_CAMERA_NOT_DETECTED;
+                        while (err != sl::SUCCESS) {
+                            err = zed.open(param); // Try to initialize the ZED
+                            NODELET_INFO_STREAM(toString(err));
+                            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                        }
+                        lastrate = rate;
+                        lastresolution = resolution;
+                        lastquality = quality;
+                    }
                     computeDepth = depth_SubNumber > 0; // Detect if one of the subscriber need to have the depth information
                     if (computeDepth) {
                         if (!computingDepth) {
@@ -502,8 +542,9 @@ namespace zed_wrapper {
                     grabbing = true;
                     if (computeDepth) {
                         int actual_confidence = zed.getConfidenceThreshold();
-                        if (actual_confidence != confidence)
+                        if (actual_confidence != confidence) {
                             zed.setConfidenceThreshold(confidence);
+                        }
                         runParams.enable_depth = true; // Ask to compute the depth
                     } else
                         runParams.enable_depth = false;
@@ -530,6 +571,21 @@ namespace zed_wrapper {
 
                     old_t = ros::Time::now();
 
+                    if (auto_exposure != lastauto_exposure) {
+                        zed.setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, 0, true);
+                    }
+                    if (!auto_exposure) {
+                        if (lastauto_exposure || (exposure != lastexposure)) {
+                            zed.setCameraSettings(sl::CAMERA_SETTINGS_EXPOSURE, exposure);   
+                        }
+                        if (lastauto_exposure || (gain != lastgain)) {
+                            zed.setCameraSettings(sl::CAMERA_SETTINGS_GAIN, gain);
+                        }
+                        lastexposure = exposure;
+                        lastgain = gain;       
+                    }
+                    lastauto_exposure = auto_exposure;
+                  
                     // Publish the left == rgb image if someone has subscribed to
                     if (left_SubNumber > 0 || rgb_SubNumber > 0) {
                         // Retrieve RGBA Left image
@@ -600,7 +656,7 @@ namespace zed_wrapper {
             resolution = sl::RESOLUTION_HD720;
             quality = sl::DEPTH_MODE_PERFORMANCE;
             sensing_mode = sl::SENSING_MODE_STANDARD;
-            rate = 5;
+            rate = 15;
             gpu_id = -1;
             zed_id = 0;
 
@@ -616,6 +672,13 @@ namespace zed_wrapper {
             nh_ns.getParam("zed_id", zed_id);
             nh_ns.getParam("depth_stabilization", depth_stabilization);
             nh_ns.getParam("confidence", confidence);
+
+            lastresolution = resolution;
+            lastquality = quality;;
+            lastrate = rate;
+            lastexposure = exposure;
+            lastgain = gain;
+            lastauto_exposure;
 
             std::string img_topic = "image_rect_color";
             std::string img_raw_topic = "image_raw_color";
