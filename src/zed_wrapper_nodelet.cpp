@@ -484,13 +484,11 @@ namespace zed_wrapper {
             fillCamInfo(zed, left_cam_info_msg, right_cam_info_msg, left_frame_id, right_frame_id);
             rgb_cam_info_msg = depth_cam_info_msg = left_cam_info_msg; // the reference camera is the Left one (next to the ZED logo)
 
-
-            sl::RuntimeParameters runParams;
-            runParams.sensing_mode = static_cast<sl::SENSING_MODE> (sensing_mode);
-
             sl::Mat leftZEDMat, rightZEDMat, depthZEDMat;
             // Main loop
             while (nh_ns.ok()) {
+                sl::RuntimeParameters runParams;
+                runParams.sensing_mode = static_cast<sl::SENSING_MODE> (sensing_mode);
                 // Check for subscribers
                 int rgb_SubNumber = pub_rgb.getNumSubscribers();
                 int rgb_raw_SubNumber = pub_raw_rgb.getNumSubscribers();
