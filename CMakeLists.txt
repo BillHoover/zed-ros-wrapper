@@ -167,6 +167,9 @@ target_link_libraries(sparse_pointcloud_node ${LINK_LIBRARIES})
 add_executable(make_pointcloud_node src/make_pointcloud_node.cpp src/lzf_d.cpp)
 target_link_libraries(make_pointcloud_node ${LINK_LIBRARIES})
 
+add_executable(make_depthimage_node src/make_depthimage_node.cpp src/lzf_d.cpp)
+target_link_libraries(make_depthimage_node ${LINK_LIBRARIES})
+
 add_executable(make_sparse_pointcloud_node src/make_sparse_pointcloud_node.cpp src/lzf_d.cpp src/lzf_c.cpp)
 target_link_libraries(make_sparse_pointcloud_node ${LINK_LIBRARIES})
 add_dependencies(make_sparse_pointcloud_node ${PROJECT_NAME}_gencfg)
