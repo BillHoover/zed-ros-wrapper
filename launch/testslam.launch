@@ -1,0 +1,23 @@
+<launch>
+
+    <!--- Compressed to depth image -->
+    <node pkg="zed_wrapper" type="make_depthimage_node" name="make_depthimage_node" >
+    </node>
+
+    <!--- Depth image to laser scan -->
+    <node pkg="depthimage_to_laserscan" type="depthimage_to_laserscan" name="depthimage_to_laserscan" output="screen" >
+        <param name="scan_height" value="5"/> 
+        <param name="scan_time" value=".2"/> 
+        <param name="range_min" value=".45"/> 
+        <param name="range_max" value="xi103"/> 
+        <param name="output_frame_id" value="zed_current_frame"/>
+        <remap from="image" to="/zed/depth/depth" />
+        <remap from="camera_info" to="/zed/depth/camera_info" />
+    </node>
+
+    <!-- Maping Node -->
+    <node pkg="gmapping" type="slam_gmapping" name="gmapping_node" output="screen" >
+        <remap from="odom" to="your/odom/topic" />
+    </node>
+
+</launch>
