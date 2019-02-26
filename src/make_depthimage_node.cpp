@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/image_encodings.h>
 #include <rodan_vr_api/CompressedDepth.h>
 #include "lzf.h"
 
@@ -11,32 +12,36 @@ static int TotalPoints = 0;
 static int Width = 0;
 static int Height = 0;
 static bool HaveDepth = false;
-static sensor_msgs::Image depthimage_msg;
+static sensor_msgs::Image depthimage;
 
 void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
 {
-  static uint16_t *skrunchedDepth = nullptr;
     // if this is the first time called, init some things
     if (!HaveDepth) {
         Width = depth_msg.width;
         Height = depth_msg.height;
         TotalPoints = Width * Height;
         HaveDepth = true;
-        skrunchedDepth = (uint16_t *)malloc(depth_msg.height*depth_msg.width*sizeof(uint16_t));
+        // set up the constant fields in the image record
+        depthimage.height = Height;
+        depthimage.width = Width;
+        depthimage.encoding = sensor_msgs::image_encodings::TYPE_16UC1;
+        depthimage.is_bigendian = 0;
+        depthimage.step = Width * sizeof(uint16_t);
+        size_t size = depthimage.step * Height;
+        depthimage.data.resize(size);
+        depthimage.header.frame_id = "";
     }
 
   // have a compressed depth_msg, first decompress to get the depth data
   unsigned int ucs = lzf_decompress(&depth_msg.data[0], 
                          depth_msg.data.size(),
-                         skrunchedDepth, 
+                         &depthimage.data[0], 
                          depth_msg.height * depth_msg.width * sizeof(uint16_t));
 
-  // need to fill in header and data
-  //depthimage_msg.header = ;
-    int i = 0;
-      uint16_t depth = skrunchedDepth[i];
 
-    pub.publish(depthimage_msg);
+    depthimage.header.stamp = ros::Time::now(); 
+    pub.publish(depthimage);
 }
 
 int main(int argc, char** argv) {
