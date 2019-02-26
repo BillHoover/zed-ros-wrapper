@@ -1,7 +1,9 @@
 // Subscribe to the compressed depthimage and publish a normal depthimage
+// For the depthimage_to_laserscan node we need it synchronized with /zed/depth/camera_info
 #include <cstdio>
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/image_encodings.h>
 #include <rodan_vr_api/CompressedDepth.h>
 #include "lzf.h"
@@ -13,6 +15,12 @@ static int Width = 0;
 static int Height = 0;
 static bool HaveDepth = false;
 static sensor_msgs::Image depthimage;
+
+static sensor_msgs::CameraInfo LatestCameraInfo;
+void cameraInfoCb(const sensor_msgs::CameraInfo camera_info_msg)
+{
+    LatestCameraInfo = camera_info_msg;
+}
 
 void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
 {
@@ -40,7 +48,7 @@ void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
                          depth_msg.height * depth_msg.width * sizeof(uint16_t));
 
 
-    depthimage.header.stamp = ros::Time::now(); 
+    depthimage.header.stamp = LatestCameraInfo.header.stamp; 
     pub.publish(depthimage);
 }
 
@@ -48,6 +56,7 @@ int main(int argc, char** argv) {
     ros::init(argc, argv, "make_depthimage_node");
     ros::NodeHandle nh;
     
+    ros::Subscriber cameraInfoSub = nh.subscribe<sensor_msgs::CameraInfo>("/zed/depth/camera_info", 1, cameraInfoCb);
     ros::Subscriber depthSub = nh.subscribe<rodan_vr_api::CompressedDepth>("/zed/depth/compressed_depth_svrt", 1, depthCb);
 
     pub = nh.advertise<sensor_msgs::Image>("/zed/depth/depth", 1);
