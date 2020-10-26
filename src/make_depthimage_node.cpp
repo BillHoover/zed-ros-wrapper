@@ -38,7 +38,7 @@ void depthCb(const rodan_vr_api::CompressedDepth depth_msg)
         depthimage.step = Width * sizeof(uint16_t);
         size_t size = depthimage.step * Height;
         depthimage.data.resize(size);
-        depthimage.header.frame_id = "";
+        depthimage.header.frame_id = "rodan_vr_frame";
     }
 
   // have a compressed depth_msg, first decompress to get the depth data

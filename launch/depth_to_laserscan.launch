@@ -10,18 +10,13 @@
         <param name="scan_height" value="5"/> 
         <param name="scan_time" value=".2"/> 
         <param name="range_min" value=".45"/> 
-        <param name="range_max" value="10"/> 
+        <param name="range_max" value="10.0"/> 
         <param name="output_frame_id" value="rodan_vr_frame"/>
         <remap from="image" to="/zed/depth/depth" />
         <remap from="camera_info" to="/zed/depth/camera_info" />
     </node>
 
-    <!-- Maping Node -->
-    <node pkg="gmapping" type="slam_gmapping" name="gmapping_node" > 
-        <param name="odom_frame" value="fake_odom"/> 
-        <!--<remap from="odom_frame" to="fake_odom" />-->
-        <!--<remap from="map_frame" to="world" />-->
-    </node>
+    
 
 
     

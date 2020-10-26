@@ -53,17 +53,19 @@ int sparsepointdistsq = 25;
 int sparsecolordistsq = 25;
 int agelimit = 5;  // in frames
 
-int num_subgrids = 10;
+int num_subgrids = 72;
 
 void callback(zed_wrapper::MakePointcloudConfig &config, uint32_t level) {
     ROS_INFO("Reconfigure: pointcloudrate %d", config.pointcloudrate);
     ROS_INFO("Reconfigure: sparsepointdist %d", config.sparsepointdist);
     ROS_INFO("Reconfigure: sparsecolordist %d", config.sparsecolordist);
     ROS_INFO("Reconfigure: agelimit %d", config.agelimit);
+    ROS_INFO("Reconfigure: num_subgrids %d", config.num_subgrids);
     rate = config.pointcloudrate;
     sparsepointdistsq = config.sparsepointdist * config.sparsepointdist;
     sparsecolordistsq = config.sparsecolordist * config.sparsecolordist;
     agelimit = config.agelimit;
+    //num_subgrids = config.num_subgrids;
 }
 
 static int16_t zedToInt16(float v)
@@ -280,7 +282,7 @@ void convert2(const rodan_vr_api::CompressedDepth& depth_msg,
     
     const int step_sub_w = depth_msg.width / sub_cnt_width;
     const int step_sub_h = depth_msg.height / sub_cnt_height;
-    //std::cout<<"step_sub_w, step_sub_h : "<<step_sub_w<<", "<<step_sub_h << std::endl;
+    std::cout<<"step_sub_w, step_sub_h : "<<step_sub_w<<", "<<step_sub_h << std::endl;
     static unsigned int MaxCompressedSizeSubgrid;
     static int32_t TotalPointsSubgrid;
 
@@ -376,7 +378,7 @@ void convert2(const rodan_vr_api::CompressedDepth& depth_msg,
                            skrunchedDepth, 
                            depth_msg.width*depth_msg.height*sizeof(uint16_t));
 
-    //std::cout<<"depth_msg h,w: "<<depth_msg.height <<", "<<depth_msg.width<<std::endl;
+    std::cout<<"depth_msg h,w: "<<depth_msg.height <<", "<<depth_msg.width<<std::endl;
 
     
     
@@ -450,7 +452,7 @@ void convert2(const rodan_vr_api::CompressedDepth& depth_msg,
         }
     }
 
-    //std::cout<<"Updates.size() : "<<Updates.size() << std::endl;
+    std::cout<<"Updates.size() : "<<Updates.size() << std::endl;
  
      
 
@@ -502,7 +504,7 @@ void convert2(const rodan_vr_api::CompressedDepth& depth_msg,
       ros::Rate(subgrid_rate).sleep(); 
     }
 
-    //std::cout << std::endl;
+    std::cout << std::endl;
     
 }
 
@@ -556,8 +558,8 @@ int main(int argc, char** argv) {
 
     pub = nh.advertise<rodan_vr_api::CompressedSparsePointCloud>("/zed/point_cloud/compressed", 1);
 
-    
-    for( int i=0; i< num_subgrids; i++){
+    int max_num_subgrids = 100;//make this larger than necessary
+    for( int i=0; i< max_num_subgrids; i++){
       std::string pc_msg = "/zed/point_cloud/compressed_"+ std::to_string(i);
       cycle_pubs.push_back(nh.advertise<rodan_vr_api::CompressedSparsePointCloud>(pc_msg, 1) );
     }
